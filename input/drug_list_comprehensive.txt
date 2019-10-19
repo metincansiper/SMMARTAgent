@@ -1,0 +1,89 @@
+Fluoxymesterone	Breast cancer	AR; ESR1; NR3C1; PRLR
+Methyltestosterone	Breast cancer	AR
+Tamoxifen citrate	Breast cancer	ESR1; ESR2
+Estramustine	Prostate cancer	ESR1; ESR2; MAP1A; MAP2
+"Interferon Alfa-2b, recombinant"	Sarcoma; Leukemia; Melanoma; Lymphoma	IFNAR1; IFNAR2
+Goserelin	Prostate cancer; Breast cancer	GNRHR; LHCGR
+Flutamide	Prostate cancer	AR
+Aldesleukin	Melanoma; Kidney cancer	IL2RA; IL2RB; IL2RG
+Bicalutamide	Prostate cancer	AR
+Anastrozole	Breast cancer	CYP19A1
+Porfimer	Esophageal cancer; Lung cancer	FCGR1A; LDLR
+Nilutamide	Prostate cancer	AR
+Imiquimod	Basal cell carcinoma	TLR7; TLR8
+Letrozole	Breast cancer	CYP19A1
+Rituximab	Lymphoma; Leukemia	MS4A1
+Toremifene	Breast cancer	ESR1
+Thalidomide	Multiple myeloma	CRBN
+Trastuzumab	Breast cancer; Stomach cancer	ERBB2
+Alitretinoin	Kaposi’s sarcoma	RARA; RARB; RARG; RXRA; RXRB; RXRG
+Bexarotene	Lymphoma	RXRA; RXRB; RXRG
+Denileukin diftitox	Lymphoma	IL2RA; IL2RB; IL2RG
+Exemestane	Breast cancer	CYP19A1
+Gemtuzumab ozogamicin	Leukemia	CD33;
+Triptorelin	Prostate cancer	GNRH1
+Alemtuzumab	Leukemia	CD52
+Imatinib mesylate	Leukemia; Stomach cancer	BCR-ABL
+Peginterferon Alfa-2b	Melanoma	IFNAR1; IFNAR2
+Fulvestrant	Breast cancer	ESR1
+Ibritumomab tiuxetan	Lymphoma	MS4A1
+Leuprolide acetate	Prostate cancer	GNRHR
+Abarelix	Prostate cancer	GNRHR
+Bortezomib	Multiple myeloma; Lymphoma	PSMB1; PSMB2; PSMB5; PSMD1; PSMD2
+Gefitinib	Lung cancer	EGFR
+Tositumomab and Iodine I 131 Tositumomab	Lymphoma	MS4A1
+Bevacizumab	Colorectal cancer; Lung cancer; Brain cancer; Kidney cancer	VEGFA
+Cetuximab	Head and neck cancer; Colorectal cancer	EGFR
+Erlotinib hydrochloride	Pancreatic cancer; Lung cancer	EGFR
+Azacitidine	Leukemia	DNMT1
+Lenalidomide	Multiple myeloma; Lymphoma	CRBN
+Sorafenib tosylate	Liver cancer; Kidney cancer; Thyroid cancer	BRAF; FGFR1; FLT1; FLT3; FLT4; KDR; KIT; PDGFRB; RAF1; RET
+Dasatinib	Leukemia	BCR-ABL
+Decitabine	Leukemia	DNMT1
+Panitumumab	Colorectal cancer	EGFR
+Sunitinib malate	Stomach cancer; Kidney cancer; Pancreatic cancer	CSF1R; FLT1; FLT3; FLT4; KDR; KIT; PDGFRA; PDGFRB
+Vorinostat	Lymphoma	HDAC1; HDAC2; HDAC3; HDAC6
+Lapatinib ditosylate	Breast cancer	EGFR; ERBB2
+Nilotinib	Leukemia	BCR-ABL
+Temsirolimus	Kidney cancer	MTOR
+Degarelix	Prostate cancer	GNRHR
+Everolimus	Breast cancer; Brain cancer; Kidney cancer; Pancreatic cancer	MTOR
+Ofatumumab	Leukemia	MS4A1
+Pazopanib hydrochloride	Kidney cancer; Sarcoma	FGF1; FGFR3; FLT1; FLT4; ITK; KDR; KIT; PDGFRA; PDGFRB; SH2B3
+Romidepsin	Lymphoma	HDAC1; HDAC2; HDAC3; HDAC6
+Denosumab	Bone cancer	TNFSF11
+Hydroxyurea	Melanoma; Leukemia; Ovarian cancer; Head and neck cancer	RRM1
+Sipuleucel-T	Prostate cancer	ACPP
+Abiraterone acetate	Prostate cancer	CYP17A1
+Brentuximab vedotin	Lymphoma	TNFRSF8
+Crizotinib	Lung cancer	ALK; MET
+Ipilimumab	Melanoma	CTLA4
+Ruxolitinib phosphate	Myelofibrosis	JAK1; JAK2
+Vandetanib	Thyroid cancer	EGFR; PTK6; TEK; VEGFA
+Vemurafenib	Melanoma	BRAF
+Pertuzumab	Breast cancer	ERBB2
+Axitinib	Kidney cancer	FLT1; FLT4; KDR
+Bosutinib	Leukemia	BCR-ABL
+Cabozantinib	Thyroid cancer	KDR; MET; RET
+Carfilzomib	Multiple myeloma	PSMB1; PSMB10; PSMB2; PSMB5; PSMB8; PSMB9
+Enzalutamide	Prostate cancer	AR
+Ponatinib hydrochloride	Leukemia	BCR-ABL
+Regorafenib	Colorectal cancer; Stomach cancer	RET; FLT1; KDR; FLT4; KIT; PDGFRA; PDGFRB; FGFR1; FGFR2; TEK; DDR2; NTRK1; EPHA2; RAF1; BRAF; MAPK11; FRK; ABL1
+Vismodegib	Basal cell carcinoma	SMO
+Ziv-aflibercept	Colorectal cancer	PGF; VEGFA; VEGFB
+Dabrafenib	Melanoma	BRAF; LIMK1; NEK11; RAF1; SIK1
+Trametinib	Melanoma	MAP2K1; MAP2K2
+Obinutuzumab	Leukemia	MS4A1
+Ado-trastuzumab emtansine	Breast cancer	ERBB2
+Afatinib	Lung cancer	EGFR; ERBB2; ERBB4
+Ibrutinib	Lymphoma	BTK
+Pomalidomide	Multiple myeloma	CRBN
+Idelalisib	Leukemia; Lymphoma	PIK3CD
+Belinostat	Lymphoma	HDAC1; HDAC2; HDAC3; HDAC6
+Ceritinib	Lung cancer	ALK
+Pembrolizumab	Melanoma	PDCD1
+Ramucirumab	Stomach cancer	KDR
+Lanreotide	Gastroenteropancreatic neuroendocrine tumor	SSTR2; SSTR5
+Blinatumomab	Leukemia	CD19; CD3D
+Nivolumab	Melanoma	PDCD1
+Olaparib	Ovarian cancer	PARP1; PARP2; PARP3
