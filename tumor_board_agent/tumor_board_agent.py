@@ -4,6 +4,7 @@ from enum import Enum
 import functools
 from collections import Counter
 from util.delimited_file_stream import DelimitedFileStream
+from os import path
 
 SCORE_THRESHOLD = 10
 PATIENT_VARIANTS_PATH = 'input/patient_variants.txt'
@@ -68,8 +69,10 @@ def get_census_gene_sets():
 
         related_set.add(gene)
 
-    del_file_stream = DelimitedFileStream()
-    del_file_stream.parse_file( file_path=CENSUS_PATH, on_data=on_data )
+    # TODO: give a warning when the path does not exists
+    if path.exists(CENSUS_PATH):
+        del_file_stream = DelimitedFileStream()
+        del_file_stream.parse_file( file_path=CENSUS_PATH, on_data=on_data )
 
     return [specific, other]
 
