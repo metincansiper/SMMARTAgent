@@ -5,6 +5,7 @@ import functools
 from collections import Counter
 from util.delimited_file_stream import DelimitedFileStream
 from os import path
+import warnings
 
 SCORE_THRESHOLD = 10
 PATIENT_VARIANTS_PATH = 'input/patient_variants.txt'
@@ -73,6 +74,8 @@ def get_census_gene_sets():
     if path.exists(CENSUS_PATH):
         del_file_stream = DelimitedFileStream()
         del_file_stream.parse_file( file_path=CENSUS_PATH, on_data=on_data )
+    else:
+        warnings.warn('Census input file is missing criteria will be executed without that!')
 
     return [specific, other]
 

@@ -21,7 +21,6 @@ class TestCreateTumorBoardReport(_IntegrationTest):
     def check_response_to_message_1(self, output):
         assert output.head() == 'SUCCESS', output
         genes = output.get('genes')
-        print(type(genes))
         assert 'ESR1' in genes
 
     def create_message_failure(self):
