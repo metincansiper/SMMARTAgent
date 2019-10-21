@@ -70,7 +70,6 @@ def get_census_gene_sets():
 
         related_set.add(gene)
 
-    # TODO: give a warning when the path does not exists
     if path.exists(CENSUS_PATH):
         del_file_stream = DelimitedFileStream()
         del_file_stream.parse_file( file_path=CENSUS_PATH, on_data=on_data )
