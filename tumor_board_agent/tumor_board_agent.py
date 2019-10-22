@@ -3,7 +3,7 @@ import threading
 from enum import Enum
 import functools
 from collections import Counter
-from util.delimited_file_stream import DelimitedFileStream
+from parser.delimited_file_stream import DelimitedFileStream
 from os import path
 import warnings
 
