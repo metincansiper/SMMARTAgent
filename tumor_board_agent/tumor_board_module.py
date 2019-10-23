@@ -6,6 +6,7 @@ from bioagents import Bioagent
 from indra.statements import Agent
 from .tumor_board_agent import TumorBoardAgent
 from indra.sources.trips.processor import TripsProcessor
+from indra.databases import hgnc_client
 from kqml import KQMLModule, KQMLPerformative, KQMLList, KQMLString, KQMLToken
 
 
@@ -34,10 +35,7 @@ class TumorBoardModule(Bioagent):
         if not res:
             return self.make_failure('NO_GENES_FOUND')
 
-        genes = KQMLList()
-        for gene in res:
-            genes.append(gene)
-
+        genes = _get_genes_cljson(res)
         reply.set('genes', genes)
 
         return reply
@@ -56,6 +54,18 @@ def _get_kqml_names(kqmlList):
 
     res = list(map(lambda kl: kl.get('NAME').string_value(), arr))
 
+    return res
+
+def _get_genes_cljson(gene_names):
+    agents = []
+    for name in gene_names:
+        db_refs={'TYPE':'ONT::GENE-PROTEIN'}
+        hgnc_id = hgnc_client.get_hgnc_id(name)
+        if hgnc_id:
+            db_refs['HGNC'] = hgnc_id
+        agents.append(Agent(name, db_refs=db_refs))
+
+    res = Bioagent.make_cljson(agents)
     return res
 
 if __name__ == "__main__":

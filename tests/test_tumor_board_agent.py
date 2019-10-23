@@ -21,7 +21,10 @@ class TestCreateTumorBoardReport(_IntegrationTest):
     def check_response_to_message_1(self, output):
         assert output.head() == 'SUCCESS', output
         genes = output.get('genes')
-        assert 'ESR1' in genes
+        gene_names = []
+        for gene in genes:
+            gene_names.append(gene.gets('NAME'))
+        assert 'ESR1' in gene_names
 
     def create_message_failure(self):
         content = KQMLList('CREATE-TUMOR-BOARD-REPORT')

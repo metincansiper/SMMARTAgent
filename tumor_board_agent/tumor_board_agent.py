@@ -7,10 +7,17 @@ from parser.delimited_file_stream import DelimitedFileStream
 from os import path
 import warnings
 
+file_dir = path.dirname(path.abspath(__file__))
+parent_dir = path.dirname(file_dir)
+
+def join_path(p):
+    return path.join(parent_dir, p)
+
+PATIENT_VARIANTS_PATH = join_path('input/patient_variants.txt')
+CENSUS_PATH = join_path('input/census.tsv')
+FDA_DRUG_LIST_PATH = join_path('input/drug_list_comprehensive.txt')
+
 SCORE_THRESHOLD = 10
-PATIENT_VARIANTS_PATH = 'input/patient_variants.txt'
-CENSUS_PATH = 'input/census.tsv'
-FDA_DRUG_LIST_PATH = 'input/drug_list_comprehensive.txt'
 PC_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
 PC_PATTERNS = ['CONTROLS_STATE_CHANGE_OF', 'CONTROLS_EXPRESSION_OF', 'IN_COMPLEX_WITH']
 PC_LIMIT = 1
