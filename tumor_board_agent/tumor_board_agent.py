@@ -96,6 +96,8 @@ class TumorBoardAgent:
         self.pc_evidences = None
 
     def create_tumor_board_report(self, patient_id):
+        variants = None
+
         if isinstance( patient_id, str ):
             variants = self.get_variants( patient_id )
         elif isinstance( patient_id, list ):
