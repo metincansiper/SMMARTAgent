@@ -29,10 +29,10 @@ class TumorBoardModule(Bioagent):
 
         res = self.TBA.create_tumor_board_report(patient_id)
 
-        if res == 'INVALID_PID':
+        if res == None:
             return self.make_failure('INVALID_PID')
 
-        if not res:
+        if len(res) == 0:
             return self.make_failure('NO_GENES_FOUND')
 
         genes = _get_genes_cljson(res)

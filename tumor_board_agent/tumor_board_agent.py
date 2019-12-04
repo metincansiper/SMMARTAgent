@@ -104,7 +104,7 @@ class TumorBoardAgent:
             variants = patient_id
 
         if variants == None:
-            return 'INVALID_PID'
+            return None
 
         report = {}
         pc_evidences = {
