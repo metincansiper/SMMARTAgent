@@ -90,10 +90,13 @@ def get_census_gene_sets():
 
 class TumorBoardAgent:
 
-    def __init__(self):
+    def __init__(self, patient_id=None):
         self.tumor_board_report = None
         self.sorted_results = None
         self.pc_evidences = None
+        self.patient_id = patient_id
+        if patient_id is not None:
+            self.create_tumor_board_report(self.patient_id)
 
     def create_tumor_board_report(self, patient_id):
         variants = None
