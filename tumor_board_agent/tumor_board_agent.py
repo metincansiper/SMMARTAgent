@@ -92,21 +92,21 @@ class TumorBoardAgent:
 
     def __init__(self, patient_id=None):
         self.tumor_board_report = None
-        self.sorted_results = None
+        self.sorted_neighbors = None
         self.pc_evidences = None
         self.patient_id = patient_id
         if patient_id is not None:
             self.create_tumor_board_report(self.patient_id)
 
     def create_tumor_board_report(self, patient_id):
-        variants = None
+        variant_pairs = None
 
         if isinstance( patient_id, str ):
-            variants = self.get_variants( patient_id )
+            variant_pairs = self.read_variant_pairs( patient_id )
         elif isinstance( patient_id, list ):
-            variants = patient_id
+            variant_pairs = patient_id
 
-        if variants == None:
+        if variant_pairs == None:
             return None
 
         report = {}
@@ -115,7 +115,8 @@ class TumorBoardAgent:
             'pc_links': {}
         }
 
-        threads = list(map(lambda v: threading.Thread(target=self.fill_variant_report, args=(v,report,pc_evidences)), variants))
+        variant_genes = list(map(lambda p: p[0], variant_pairs))
+        threads = list(map(lambda v: threading.Thread(target=self.fill_variant_report, args=(v,report,pc_evidences)), variant_genes))
 
         for thread in threads:
             thread.start()
@@ -128,16 +129,17 @@ class TumorBoardAgent:
 
         report_sum = functools.reduce(lambda a,b : Counter(a)+Counter(b),report.values())
         most_common = report_sum.most_common()
-        res = []
+        sorted_neighbors = []
 
         for e in most_common:
             score = e[1]
             gene = e[0]
             if score > SCORE_THRESHOLD:
-                res.append(gene)
+                sorted_neighbors.append(gene)
 
-        self.sorted_results = res
-        return res
+        self.sorted_neighbors = sorted_neighbors
+        self.variant_pairs = variant_pairs
+        return sorted_neighbors
 
     def get_evidences_for(self, gene1, gene2):
         # TODO: throw error if self.pc_evidences is not set
@@ -166,18 +168,21 @@ class TumorBoardAgent:
 
         return res
 
-    def get_top_k_res(self, k):
-        # TODO: throw error if self.sorted_results is not set
-        return self.sorted_results[:k]
+    def get_top_neighbors(self, k):
+        # TODO: throw error if self.sorted_neighbors is not set
+        return self.sorted_neighbors[:k]
+
+    def get_variant_pairs(self):
+        return self.variant_pairs
 
     def why_important(self, gene, k=2):
         variant_scores = {}
         # TODO throw error if self.tumor_board_report is not set
-        for variant in self.tumor_board_report:
-            neighbours = self.tumor_board_report[variant]
-            if gene in neighbours:
-                score = neighbours.get(gene)
-                variant_scores[variant] = score
+        for variant_gene in self.tumor_board_report:
+            neighbors = self.tumor_board_report[variant_gene]
+            if gene in neighbors:
+                score = neighbors.get(gene)
+                variant_scores[variant_gene] = score
 
         c = Counter(variant_scores)
         top_most_tuples = c.most_common(k)
@@ -185,11 +190,11 @@ class TumorBoardAgent:
 
         return top_most_names
 
-    def fill_variant_report(self, variant, report, pc_evidences):
-        variant = variant.upper()
+    def fill_variant_report(self, variant_gene, report, pc_evidences):
+        variant_gene = variant_gene.upper()
         score = 0
 
-        neighbours = set()
+        neighbors = set()
         var_pubmed_ids = {}
         var_pc_links = {}
 
@@ -199,7 +204,7 @@ class TumorBoardAgent:
         changes_state_of_variant = set()
         state_changed_by_variant = set()
 
-        r = self.query_pc( variant )
+        r = self.query_pc( variant_gene )
         text = r.text
         lines = text.splitlines()
 
@@ -219,14 +224,14 @@ class TumorBoardAgent:
             pubmed_ids = split_evidence(parts[4])
             pc_links = split_evidence(parts[6])
 
-            var_eq_e1 = entity1 == variant
-            var_eq_e2 = entity2 == variant
+            var_eq_e1 = entity1 == variant_gene
+            var_eq_e2 = entity2 == variant_gene
 
             if not var_eq_e1 and not var_eq_e2:
-                raise Exception('One of entity names should match the variant name where variant name is {} and the entitiy names are {}, {}', variant, entity1, entity2)
+                raise Exception('One of entity names should match the variant name where variant name is {} and the entitiy names are {}, {}', variant_gene, entity1, entity2)
 
             other_side = entity2 if var_eq_e1 else entity1
-            neighbours.add(other_side)
+            neighbors.add(other_side)
 
             n_pubmed_ids = var_pubmed_ids.get( other_side, set() )
             n_pc_links = var_pc_links.get( other_side, set() )
@@ -261,54 +266,59 @@ class TumorBoardAgent:
 
         scores = {}
 
-        for neighbour in neighbours:
+        for neighbor in neighbors:
             score = 0
-            if neighbour in exp_controlled_by_variant:
+            if neighbor in exp_controlled_by_variant:
                 score += SCORES.EXP_CONTROLLED_BY_VARIANT
-            if neighbour in controls_exp_of_variant:
+            if neighbor in controls_exp_of_variant:
                 score += SCORES.CONTROLS_EXP_OF_VARIANT
-            if neighbour in in_complex_with_variant:
+            if neighbor in in_complex_with_variant:
                 score += SCORES.IN_COMPLEX_WITH_VARIANT
-            if neighbour in changes_state_of_variant:
+            if neighbor in changes_state_of_variant:
                 score += SCORES.CHANGES_STATE_OF_VARIANT
-            if neighbour in state_changed_by_variant:
+            if neighbor in state_changed_by_variant:
                 score += SCORES.STATE_CHANGED_BY_VARIANT
-            if neighbour in SPECIFIC_CENSUS_GENE_SET:
+            if neighbor in SPECIFIC_CENSUS_GENE_SET:
                 score += SCORES.SPECIFIC_CENSUS_GENE
-            if neighbour in OTHER_CENSUS_GENE_SET:
+            if neighbor in OTHER_CENSUS_GENE_SET:
                 score += SCORES.OTHER_CENSUS_GENE
-            if neighbour in SPECIFIC_FDA_DRUG_TARGETS:
-                score += SPECIFIC_FDA_DRUG_TARGETS[neighbour] * SCORES.SPECIFIC_FDA_DRUG_TARGET
-            if neighbour in OTHER_FDA_DRUG_TARGETS:
-                score += OTHER_FDA_DRUG_TARGETS[neighbour] * SCORES.OTHER_FDA_DRUG_TARGET
+            if neighbor in SPECIFIC_FDA_DRUG_TARGETS:
+                score += SPECIFIC_FDA_DRUG_TARGETS[neighbor] * SCORES.SPECIFIC_FDA_DRUG_TARGET
+            if neighbor in OTHER_FDA_DRUG_TARGETS:
+                score += OTHER_FDA_DRUG_TARGETS[neighbor] * SCORES.OTHER_FDA_DRUG_TARGET
 
             if score > 0:
-                scores[neighbour] = score
+                scores[neighbor] = score
 
-        report[ variant ] = scores
-        pc_evidences[ 'pubmed_ids' ][ variant ] = var_pubmed_ids
-        pc_evidences[ 'pc_links' ][ variant ] = var_pc_links
+        report[ variant_gene ] = scores
+        pc_evidences[ 'pubmed_ids' ][ variant_gene ] = var_pubmed_ids
+        pc_evidences[ 'pc_links' ][ variant_gene ] = var_pc_links
 
-    def get_variants(self, patient_id):
-        variants = None
+    def read_variant_pairs(self, patient_id):
+        variant_pairs = None
+
+        def get_variant_pair(s):
+            l = s.split('-')
+            return [l[0], l[1:]]
 
         def on_data(tabs):
             if tabs[0] == patient_id:
-                nonlocal variants
-                variants = tabs[1].split(',')
+                nonlocal variant_pairs
+                variant_strs = tabs[1].split(',')
+                variant_pairs = list(map(lambda s: get_variant_pair(s),variant_strs))
                 # Signal to end the streaming by returning True
                 return True
 
         del_file_stream = DelimitedFileStream()
         del_file_stream.parse_file( file_path=PATIENT_VARIANTS_PATH, on_data=on_data )
 
-        return variants
+        return variant_pairs
 
-    def query_pc(self, variant):
-        params = self.get_pc_query_params(variant)
+    def query_pc(self, variant_gene):
+        params = self.get_pc_query_params(variant_gene)
         r = requests.get(PC_URL, params)
         return r
 
-    def get_pc_query_params(self, variant):
-        params = { 'limit': PC_LIMIT, 'direction': PC_DIR, 'pattern': PC_PATTERNS, 'source': variant }
+    def get_pc_query_params(self, variant_gene):
+        params = { 'limit': PC_LIMIT, 'direction': PC_DIR, 'pattern': PC_PATTERNS, 'source': variant_gene }
         return params
