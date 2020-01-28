@@ -4,6 +4,7 @@ from enum import Enum
 import functools
 from collections import Counter
 from parser.delimited_file_stream import DelimitedFileStream
+from util.paxtools import biopax_text_to_sbgn
 from os import path
 import warnings
 
@@ -18,10 +19,9 @@ CENSUS_PATH = join_path('input/census.tsv')
 FDA_DRUG_LIST_PATH = join_path('input/drug_list_comprehensive.txt')
 
 SCORE_THRESHOLD = 10
-PC_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
-PC_PATTERNS = ['CONTROLS_STATE_CHANGE_OF', 'CONTROLS_EXPRESSION_OF', 'IN_COMPLEX_WITH']
+PC_NEIGHBORHOOD_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
+PC_GRAPH_URL = 'https://www.pathwaycommons.org/pc2/graph'
 PC_LIMIT = 1
-PC_DIR = 'BOTHSTREAM'
 CONTROLS_EXPRESSION_OF = 'controls-expression-of'.upper()
 IN_COMPLEX_WITH = 'in-complex-with'.upper()
 CONTROLS_STATE_CHANGE_OF = 'controls-state-change-of'.upper()
@@ -102,7 +102,7 @@ class TumorBoardAgent:
         variant_pairs = None
 
         if isinstance( patient_id, str ):
-            variant_pairs = self.read_variant_pairs( patient_id )
+            variant_pairs = TumorBoardAgent.read_variant_pairs( patient_id )
         elif isinstance( patient_id, list ):
             variant_pairs = patient_id
 
@@ -204,7 +204,7 @@ class TumorBoardAgent:
         changes_state_of_variant = set()
         state_changed_by_variant = set()
 
-        r = self.query_pc( variant_gene )
+        r = TumorBoardAgent.query_pc_neighborhood( variant_gene )
         text = r.text
         lines = text.splitlines()
 
@@ -294,7 +294,8 @@ class TumorBoardAgent:
         pc_evidences[ 'pubmed_ids' ][ variant_gene ] = var_pubmed_ids
         pc_evidences[ 'pc_links' ][ variant_gene ] = var_pc_links
 
-    def read_variant_pairs(self, patient_id):
+    @staticmethod
+    def read_variant_pairs(patient_id):
         variant_pairs = None
 
         def get_variant_pair(s):
@@ -314,11 +315,36 @@ class TumorBoardAgent:
 
         return variant_pairs
 
-    def query_pc(self, variant_gene):
-        params = self.get_pc_query_params(variant_gene)
-        r = requests.get(PC_URL, params)
+    @staticmethod
+    def query_pc_neighborhood(variant_gene):
+        params = TumorBoardAgent.get_pc_query_neighborhood_params(variant_gene)
+        r = requests.get(PC_NEIGHBORHOOD_URL, params)
         return r
 
-    def get_pc_query_params(self, variant_gene):
-        params = { 'limit': PC_LIMIT, 'direction': PC_DIR, 'pattern': PC_PATTERNS, 'source': variant_gene }
+    @staticmethod
+    def get_pc_query_neighborhood_params(variant_gene):
+        DIR = 'BOTHSTREAM'
+        PATTERNS = ['CONTROLS_STATE_CHANGE_OF', 'CONTROLS_EXPRESSION_OF', 'IN_COMPLEX_WITH']
+        params = { 'limit': PC_LIMIT, 'direction': DIR, 'pattern': PATTERNS, 'source': variant_gene }
         return params
+
+    @staticmethod
+    def query_pc_pathsbetween(sources):
+        params = TumorBoardAgent.get_pc_query_pathsbetween_params(sources)
+        r = requests.get(PC_GRAPH_URL, params)
+        return r
+
+    @staticmethod
+    def get_pc_query_pathsbetween_params(sources):
+        KIND = 'PATHSBETWEEN'
+        params = { 'kind': KIND, 'source': sources }
+        return params
+
+
+    @staticmethod
+    def get_pathsbetween_genes(sources):
+        r = TumorBoardAgent.query_pc_pathsbetween(sources)
+        text = r.text
+
+        sbgn = biopax_text_to_sbgn(text)
+        return sbgn
