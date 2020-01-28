@@ -25,6 +25,9 @@ def datasource_score(jConversion):
     ds = get_datasource(jConversion)
     reverse_importance_order = [PANTHER_NAME, PID_NAME, CTD_NAME, REACTOME_NAME]
 
+    if ds not in reverse_importance_order:
+        return -1
+    
     return reverse_importance_order.index(ds)
 
 def convertToJSet(jIt):
