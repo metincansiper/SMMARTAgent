@@ -4,7 +4,7 @@ from enum import Enum
 import functools
 from collections import Counter
 from parser.delimited_file_stream import DelimitedFileStream
-from util.paxtools import biopax_text_to_sbgn
+from util.paxtools import biopax_text_to_sbgn, DEFAULT_MAX_CONVERSIONS
 from os import path
 import warnings
 
@@ -342,7 +342,7 @@ class TumorBoardAgent:
 
 
     @staticmethod
-    def get_pathsbetween_genes(sources):
+    def get_pathsbetween_genes(sources, max_conversions=DEFAULT_MAX_CONVERSIONS):
         r = TumorBoardAgent.query_pc_pathsbetween(sources)
         text = r.text
 
