@@ -3,8 +3,8 @@ import threading
 from enum import Enum
 import functools
 from collections import Counter
-from parser.delimited_file_stream import DelimitedFileStream
-from util.paxtools import biopax_text_to_sbgn, DEFAULT_MAX_CONVERSIONS
+from .parser.delimited_file_stream import DelimitedFileStream
+from .util.paxtools import biopax_text_to_sbgn, DEFAULT_MAX_CONVERSIONS
 from os import path
 import warnings
 

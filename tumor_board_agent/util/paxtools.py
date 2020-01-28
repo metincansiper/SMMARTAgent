@@ -1,5 +1,4 @@
-from .jnius_prep import *
-from jnius import autoclass, cast
+from indra.java_vm import autoclass, cast
 import heapq
 
 DEFAULT_MAX_CONVERSIONS = 20
