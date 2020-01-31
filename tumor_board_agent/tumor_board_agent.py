@@ -335,15 +335,35 @@ class TumorBoardAgent:
         return r
 
     @staticmethod
+    def query_pc_pathsfromto(sources, targets):
+        params = TumorBoardAgent.get_pc_query_pathsfromto_params(sources, targets)
+        r = requests.get(PC_GRAPH_URL, params)
+        return r
+
+    @staticmethod
     def get_pc_query_pathsbetween_params(sources):
         KIND = 'PATHSBETWEEN'
         params = { 'kind': KIND, 'source': sources }
+        return params
+
+    @staticmethod
+    def get_pc_query_pathsfromto_params(sources, targets):
+        KIND = 'PATHSFROMTO'
+        params = { 'kind': KIND, 'source': sources, 'target': targets }
         return params
 
 
     @staticmethod
     def get_pathsbetween_genes(sources, max_conversions=DEFAULT_MAX_CONVERSIONS):
         r = TumorBoardAgent.query_pc_pathsbetween(sources)
+        text = r.text
+
+        sbgn = biopax_text_to_sbgn(text)
+        return sbgn
+
+    @staticmethod
+    def get_pathsfromto_genes(sources, targets, max_conversions=DEFAULT_MAX_CONVERSIONS):
+        r = TumorBoardAgent.query_pc_pathsfromto(sources, targets)
         text = r.text
 
         sbgn = biopax_text_to_sbgn(text)
