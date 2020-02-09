@@ -5,7 +5,7 @@ import functools
 from collections import Counter
 from .parser.delimited_file_stream import DelimitedFileStream
 from .util.paxtools import biopax_text_to_sbgn, DEFAULT_MAX_CONVERSIONS
-from os import path
+from os import path, system
 import warnings
 
 file_dir = path.dirname(path.abspath(__file__))
@@ -17,6 +17,10 @@ def join_path(p):
 PATIENT_VARIANTS_PATH = join_path('input/patient_variants.txt')
 CENSUS_PATH = join_path('input/census.tsv')
 FDA_DRUG_LIST_PATH = join_path('input/drug_list_comprehensive.txt')
+CANCER_NETWORK_PATH = join_path('input/cancer_network')
+CN_MUTEC_FILE_PATH = path.join(CANCER_NETWORK_PATH, 'mutec.csv')
+CN_SIF_OUTPUT_PATH = path.join(CANCER_NETWORK_PATH, 'network.sif')
+CANCER_NETWORK_JAR_PATH = join_path('jar/cancer-network.jar')
 
 SCORE_THRESHOLD = 10
 PC_NEIGHBORHOOD_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
@@ -294,6 +298,59 @@ class TumorBoardAgent:
         pc_evidences[ 'pubmed_ids' ][ variant_gene ] = var_pubmed_ids
         pc_evidences[ 'pc_links' ][ variant_gene ] = var_pc_links
 
+    def get_neighbors_sif(self, max_lines=100):
+        neighbors = self.sorted_neighbors
+        self.create_cn_mutect_file()
+        system('java -jar {} {}'.format(CANCER_NETWORK_JAR_PATH, CANCER_NETWORK_PATH))
+
+        def get_score(line):
+            tabs = line.split('\t')
+            neighbors = list(map(lambda n: n.lower(), self.sorted_neighbors))
+
+            score = 0
+
+            if len(tabs) > 1:
+                gene1 = tabs[0].lower()
+                gene2 = tabs[1].lower()
+
+                if gene1 in neighbors:
+                    score += neighbors.index(gene1)
+
+                if gene2 in neighbors:
+                    score += neighbors.index(gene2)
+
+            return score
+
+        def must_include(line):
+            return get_score(line) > 0
+
+
+        text = TumorBoardAgent.read_text_file(CN_SIF_OUTPUT_PATH)
+        lines = text.splitlines()
+
+        if len(lines) > max_lines:
+            lines.sort(key=get_score, reverse=True)
+            lines = lines[:max_lines]
+
+        lines = filter(must_include, lines)
+
+        return '\n'.join(lines)
+
+    def create_cn_mutect_file(self):
+        genes = self.sorted_neighbors
+        with open(CN_MUTEC_FILE_PATH, 'w') as mutect_file:
+            # The first line is for the header
+            mutect_file.write('\n')
+
+            for gene in genes:
+                # Only fill the colomn for the gene, fill the rest with a space char
+                arr = ['NA\t'] * 5 + [ gene ] + ['\tNA'] * 9
+                line = ''.join(arr)
+                # The second line is for the gene of interest
+                mutect_file.write(line)
+                mutect_file.write('\n')
+
+
     @staticmethod
     def read_variant_pairs(patient_id):
         variant_pairs = None
@@ -368,3 +425,9 @@ class TumorBoardAgent:
 
         sbgn = biopax_text_to_sbgn(text)
         return sbgn
+
+    @staticmethod
+    def read_text_file(f):
+        with open(f, 'r') as content_file:
+            content = content_file.read()
+            return content
