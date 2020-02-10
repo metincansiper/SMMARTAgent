@@ -344,7 +344,7 @@ class TumorBoardAgent:
 
             for gene in genes:
                 # Only fill the colomn for the gene, fill the rest with a space char
-                arr = ['NA\t'] * 5 + [ gene ] + ['\tNA'] * 9
+                arr = [' \t'] * 5 + [ gene ] + ['\t '] * 9
                 line = ''.join(arr)
                 # The second line is for the gene of interest
                 mutect_file.write(line)
