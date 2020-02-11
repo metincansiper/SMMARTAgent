@@ -6,6 +6,7 @@ from collections import Counter
 from .parser.delimited_file_stream import DelimitedFileStream
 from .util.paxtools import biopax_text_to_sbgn, DEFAULT_MAX_CONVERSIONS
 from os import path, system
+import heapq
 import warnings
 
 file_dir = path.dirname(path.abspath(__file__))
@@ -176,6 +177,20 @@ class TumorBoardAgent:
         # TODO: throw error if self.sorted_neighbors is not set
         return self.sorted_neighbors[:k]
 
+    def get_important_neighbors_of_gene(self, gene, k=None):
+        if gene not in self.tumor_board_report:
+            return None
+        
+        gene_report = self.tumor_board_report[gene]
+        gene_neighbors = gene_report.keys()
+        important_neighbors = self.get_top_neighbors(None)
+
+        l = list(set(important_neighbors) & set(gene_neighbors))
+        l.sort(key=lambda n: gene_report[n], reverse=True)
+
+        return l[:k]
+
+
     def get_variant_pairs(self):
         return self.variant_pairs
 
@@ -298,14 +313,15 @@ class TumorBoardAgent:
         pc_evidences[ 'pubmed_ids' ][ variant_gene ] = var_pubmed_ids
         pc_evidences[ 'pc_links' ][ variant_gene ] = var_pc_links
 
-    def get_neighbors_sif(self, max_lines=100):
-        neighbors = self.sorted_neighbors
-        self.create_cn_mutect_file()
+    def get_neighbors_sif(self, gene, max_lines=None):
+        self.create_cn_mutect_file(gene)
         system('java -jar {} {}'.format(CANCER_NETWORK_JAR_PATH, CANCER_NETWORK_PATH))
+
+        neighbors = self.get_important_neighbors_of_gene(gene)
+        neighbors = list(map(lambda n: n.lower(), neighbors))
 
         def get_score(line):
             tabs = line.split('\t')
-            neighbors = list(map(lambda n: n.lower(), self.sorted_neighbors))
 
             score = 0
 
@@ -328,27 +344,24 @@ class TumorBoardAgent:
         text = TumorBoardAgent.read_text_file(CN_SIF_OUTPUT_PATH)
         lines = text.splitlines()
 
-        if len(lines) > max_lines:
-            lines.sort(key=get_score, reverse=True)
-            lines = lines[:max_lines]
+        if max_lines and len(lines) > max_lines:
+            lines = heapq.nlargest(max_lines, lines, key=get_score)
 
         lines = filter(must_include, lines)
 
         return '\n'.join(lines)
 
-    def create_cn_mutect_file(self):
-        genes = self.sorted_neighbors
+    def create_cn_mutect_file(self, gene):
         with open(CN_MUTEC_FILE_PATH, 'w') as mutect_file:
             # The first line is for the header
             mutect_file.write('\n')
 
-            for gene in genes:
-                # Only fill the colomn for the gene, fill the rest with a space char
-                arr = [' \t'] * 5 + [ gene ] + ['\t '] * 9
-                line = ''.join(arr)
-                # The second line is for the gene of interest
-                mutect_file.write(line)
-                mutect_file.write('\n')
+            # Only fill the colomn for the gene, fill the rest with a space char
+            arr = [' \t'] * 5 + [ gene ] + ['\t '] * 9
+            line = ''.join(arr)
+            # The second line is for the gene of interest
+            mutect_file.write(line)
+            mutect_file.write('\n')
 
 
     @staticmethod
