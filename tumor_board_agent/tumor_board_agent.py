@@ -22,6 +22,7 @@ CANCER_NETWORK_PATH = join_path('input/cancer_network')
 CN_MUTEC_FILE_PATH = path.join(CANCER_NETWORK_PATH, 'mutec.csv')
 CN_SIF_OUTPUT_PATH = path.join(CANCER_NETWORK_PATH, 'network.sif')
 CANCER_NETWORK_JAR_PATH = join_path('jar/cancer-network.jar')
+CLINICAL_TRIALS_URL = 'https://clinicaltrials.gov/ct2/results/download_fields'
 
 SCORE_THRESHOLD = 10
 PC_NEIGHBORHOOD_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
@@ -350,6 +351,40 @@ class TumorBoardAgent:
         lines = filter(must_include, lines)
 
         return '\n'.join(lines)
+
+    @staticmethod
+    def get_clinical_trials(drugs):
+        params = {'cond': 'breast_cancer', 'term': drugs[0],
+                    'down_count': 10000, 'down_fmt':'tsv'}
+
+        r = requests.get(CLINICAL_TRIALS_URL, params)
+
+        res = requests.get(CLINICAL_TRIALS_URL, params)
+        text = res.text
+        lines = text.splitlines()
+        lines = list(map(lambda l: l.lower(), lines))
+
+        def valid_line(line):
+            # print(line)
+            for drug in drugs:
+                search_str = 'drug: ' + drug.lower()
+                if search_str not in line:
+                    return False
+
+            return True
+
+        def extract_info(line):
+            vals = line.split('\t')
+            title = vals[1]
+            status = vals[2]
+            url = vals[7]
+
+            return { 'title': title, 'status': status, 'url': url }
+
+        lines = filter(valid_line, lines)
+        res = list(map(extract_info, lines))
+
+        return res
 
     def create_cn_mutect_file(self, gene):
         with open(CN_MUTEC_FILE_PATH, 'w') as mutect_file:
