@@ -403,7 +403,7 @@ class TumorBoardAgent:
     @staticmethod
     def query_cbio_mutations_params(page_number):
         sample_list_id = 'msk_impact_2017_all'
-        projection = 'SUMMARY'
+        projection = 'DETAILED'
         page_size = '50000'
         direction = 'ASC'
 
@@ -436,7 +436,7 @@ class TumorBoardAgent:
         grouped = {}
         for patient_id in list(groups.keys()):
             indices = groups.get(patient_id)
-            gene_variant = list(map(lambda i: [mutations[i].get('entrezGeneId'), mutations[i].get('proteinChange')],indices))
+            gene_variant = list(map(lambda i: [mutations[i].get('gene').get('hugoGeneSymbol'), mutations[i].get('proteinChange')],indices))
             variants_by_gene = {}
             for p in gene_variant:
                 gene = str(p[0])
