@@ -8,6 +8,7 @@ from .util.paxtools import biopax_text_to_sbgn, DEFAULT_MAX_CONVERSIONS
 from os import path, system
 import heapq
 import warnings
+import pandas
 
 file_dir = path.dirname(path.abspath(__file__))
 parent_dir = path.dirname(file_dir)
@@ -23,6 +24,7 @@ CN_MUTEC_FILE_PATH = path.join(CANCER_NETWORK_PATH, 'mutec.csv')
 CN_SIF_OUTPUT_PATH = path.join(CANCER_NETWORK_PATH, 'network.sif')
 CANCER_NETWORK_JAR_PATH = join_path('jar/cancer-network.jar')
 CLINICAL_TRIALS_URL = 'https://clinicaltrials.gov/ct2/results/download_fields'
+CBIO_MUTATIONS_URL = 'https://www.cbioportal.org/api/molecular-profiles/msk_impact_2017_mutations/mutations'
 
 SCORE_THRESHOLD = 10
 PC_NEIGHBORHOOD_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
@@ -181,7 +183,7 @@ class TumorBoardAgent:
     def get_important_neighbors_of_gene(self, gene, k=None):
         if gene not in self.tumor_board_report:
             return None
-        
+
         gene_report = self.tumor_board_report[gene]
         gene_neighbors = gene_report.keys()
         important_neighbors = self.get_top_neighbors(None)
@@ -398,27 +400,63 @@ class TumorBoardAgent:
             mutect_file.write(line)
             mutect_file.write('\n')
 
+    @staticmethod
+    def query_cbio_mutations_params(page_number):
+        sample_list_id = 'msk_impact_2017_all'
+        projection = 'SUMMARY'
+        page_size = '50000'
+        direction = 'ASC'
+
+        params = { 'sampleListId': sample_list_id,
+                    'projection': projection,
+                    'pageSize': page_size,
+                    'pageNumber': page_number,
+                    'direction': direction }
+
+        return params
+
+    @staticmethod
+    def query_cbio_mutations(page_number=0):
+        # print(page_number)
+        params = TumorBoardAgent.query_cbio_mutations_params(page_number)
+        # print(params)
+        r = requests.get(CBIO_MUTATIONS_URL, params)
+        js = r.json()
+
+        if len(js) > 0:
+            print(len(js))
+            return [*js, *TumorBoardAgent.query_cbio_mutations(page_number + 1)]
+
+        return []
+
+    @staticmethod
+    def get_grouped_cbio_mutations():
+        mutations = TumorBoardAgent.query_cbio_mutations()
+        groups = pandas.DataFrame(mutations).groupby("patientId").groups
+        grouped = {}
+        for patient_id in list(groups.keys()):
+            indices = groups.get(patient_id)
+            gene_variant = list(map(lambda i: [mutations[i].get('entrezGeneId'), mutations[i].get('proteinChange')],indices))
+            variants_by_gene = {}
+            for p in gene_variant:
+                gene = str(p[0])
+                variant = p[1]
+                variants = variants_by_gene.get(gene, [])
+                variants.append(variant)
+                variants_by_gene[gene] = variants
+
+            genes = list(variants_by_gene.keys())
+            pairs = list( map( lambda g: [ g, variants_by_gene[ g ] ], genes ) )
+            grouped[patient_id] = pairs
+
+
+        return grouped
 
     @staticmethod
     def read_variant_pairs(patient_id):
-        variant_pairs = None
-
-        def get_variant_pair(s):
-            l = s.split('-')
-            return [l[0], l[1:]]
-
-        def on_data(tabs):
-            if tabs[0] == patient_id:
-                nonlocal variant_pairs
-                variant_strs = tabs[1].split(',')
-                variant_pairs = list(map(lambda s: get_variant_pair(s),variant_strs))
-                # Signal to end the streaming by returning True
-                return True
-
-        del_file_stream = DelimitedFileStream()
-        del_file_stream.parse_file( file_path=PATIENT_VARIANTS_PATH, on_data=on_data )
-
-        return variant_pairs
+        mutations_by_pid = TumorBoardAgent.get_grouped_cbio_mutations()
+        mutations = mutations_by_pid.get(patient_id)
+        return mutations
 
     @staticmethod
     def query_pc_neighborhood(variant_gene):
