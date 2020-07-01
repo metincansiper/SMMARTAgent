@@ -417,20 +417,20 @@ class TumorBoardAgent:
         return params
 
     @staticmethod
-    def query_cbio_cnas_params(page_number):
+    def query_cbio_cnas_params():
         discrete_copy_number_event_type = 'HOMDEL_AND_AMP'
         molecular_profile_id = 'msk_impact_2017_cna'
         sample_list_id = 'msk_impact_2017_all'
         projection = 'DETAILED'
-        page_size = '50000'
+        # page_size = '50000'
         direction = 'ASC'
 
         params = { 'discreteCopyNumberEventType': discrete_copy_number_event_type,
                     'sampleListId': sample_list_id,
                     'molecularProfileId': molecular_profile_id,
                     'projection': projection,
-                    'pageSize': page_size,
-                    'pageNumber': page_number,
+                    # 'pageSize': page_size,
+                    # 'pageNumber': page_number,
                     'direction': direction }
 
         return params
@@ -450,18 +450,19 @@ class TumorBoardAgent:
         return []
 
     @staticmethod
-    def query_cbio_cnas(page_number=0):
+    def query_cbio_cnas():
         # print(page_number)
-        params = TumorBoardAgent.query_cbio_cnas_params(page_number)
+        params = TumorBoardAgent.query_cbio_cnas_params()
         # print(params)
         r = requests.get(CBIO_CNAS_URL, params)
         js = r.json()
 
-        if len(js) > 0:
-            print(len(js))
-            return [*js, *TumorBoardAgent.query_cbio_cnas(page_number + 1)]
-
-        return []
+        return js
+        # if len(js) > 0:
+        #     print(len(js))
+        #     return [*js, *TumorBoardAgent.query_cbio_cnas(page_number + 1)]
+        #
+        # return []
 
     @staticmethod
     def get_grouped_cbio_cnas():
