@@ -366,9 +366,7 @@ class TumorBoardAgent:
     @staticmethod
     def get_clinical_trials(drugs):
         params = {'cond': 'breast_cancer', 'term': drugs[0],
-                    'down_count': 10000, 'down_fmt':'tsv'}
-
-        r = requests.get(CLINICAL_TRIALS_URL, params)
+                  'down_count': 10000, 'down_fmt': 'tsv'}
 
         res = requests.get(CLINICAL_TRIALS_URL, params)
         text = res.text
@@ -390,7 +388,7 @@ class TumorBoardAgent:
             status = vals[2]
             url = vals[7]
 
-            return { 'title': title, 'status': status, 'url': url }
+            return {'title': title, 'status': status, 'url': url}
 
         lines = filter(valid_line, lines)
         res = list(map(extract_info, lines))
