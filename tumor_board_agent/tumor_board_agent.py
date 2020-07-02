@@ -508,13 +508,13 @@ class TumorBoardAgent:
     def read_variant_pairs(self):
         from indra.databases.hgnc_client import \
             get_hgnc_from_entrez, get_hgnc_name
-        pairs = []
+        mutations_by_gene = defaultdict(list)
         for mutation in self.patient.mutations:
             gene_name = get_hgnc_name(
                 get_hgnc_from_entrez(str(mutation['entrezGeneId'])))
             change = mutation['proteinChange']
-            pairs.append((gene_name, change))
-        return pairs
+            mutations_by_gene[gene_name].append(change)
+        return list(mutations_by_gene.items())
 
     @staticmethod
     def read_cna_pairs(patient_id):
