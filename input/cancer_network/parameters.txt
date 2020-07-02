@@ -1,0 +1,4 @@
+use-relation-type = controls-state-change-of 0
+use-relation-type = in-complex-with 1
+cancer-gene-resource = Custom cancer-genes-to-drugs.txt
+gene-alteration-set = Mutect mutec.csv

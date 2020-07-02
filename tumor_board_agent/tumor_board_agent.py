@@ -1,27 +1,37 @@
-import requests
 import threading
-from enum import Enum
 import functools
 from collections import Counter
-from parser.delimited_file_stream import DelimitedFileStream
-from os import path
+from .parser.delimited_file_stream import DelimitedFileStream
+from .util.paxtools import biopax_text_to_sbgn, DEFAULT_MAX_CONVERSIONS
+from os import path, system
+import heapq
 import warnings
+import pandas
+from bioagents.cbio_client import *
+from indra.databases.hgnc_client import \
+    get_hgnc_from_entrez, get_hgnc_name
 
 file_dir = path.dirname(path.abspath(__file__))
 parent_dir = path.dirname(file_dir)
 
+
 def join_path(p):
     return path.join(parent_dir, p)
+
 
 PATIENT_VARIANTS_PATH = join_path('input/patient_variants.txt')
 CENSUS_PATH = join_path('input/census.tsv')
 FDA_DRUG_LIST_PATH = join_path('input/drug_list_comprehensive.txt')
+CANCER_NETWORK_PATH = join_path('input/cancer_network')
+CN_MUTEC_FILE_PATH = path.join(CANCER_NETWORK_PATH, 'mutec.csv')
+CN_SIF_OUTPUT_PATH = path.join(CANCER_NETWORK_PATH, 'network.sif')
+CANCER_NETWORK_JAR_PATH = join_path('jar/cancer-network.jar')
+CLINICAL_TRIALS_URL = 'https://clinicaltrials.gov/ct2/results/download_fields'
 
 SCORE_THRESHOLD = 10
-PC_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
-PC_PATTERNS = ['CONTROLS_STATE_CHANGE_OF', 'CONTROLS_EXPRESSION_OF', 'IN_COMPLEX_WITH']
+PC_NEIGHBORHOOD_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
+PC_GRAPH_URL = 'https://www.pathwaycommons.org/pc2/graph'
 PC_LIMIT = 1
-PC_DIR = 'BOTHSTREAM'
 CONTROLS_EXPRESSION_OF = 'controls-expression-of'.upper()
 IN_COMPLEX_WITH = 'in-complex-with'.upper()
 CONTROLS_STATE_CHANGE_OF = 'controls-state-change-of'.upper()
@@ -88,25 +98,31 @@ def get_census_gene_sets():
 [SPECIFIC_FDA_DRUG_TARGETS, OTHER_FDA_DRUG_TARGETS] = get_fda_drug_targets()
 [SPECIFIC_CENSUS_GENE_SET, OTHER_CENSUS_GENE_SET] = get_census_gene_sets()
 
+
 class TumorBoardAgent:
 
     def __init__(self, patient_id=None):
         self.tumor_board_report = None
-        self.sorted_results = None
+        self.sorted_neighbors = None
         self.pc_evidences = None
         self.patient_id = patient_id
+        self.variant_pairs = []
+        self.cna_pairs = []
         if patient_id is not None:
+            self.patient = Patient(patient_id)
             self.create_tumor_board_report(self.patient_id)
 
     def create_tumor_board_report(self, patient_id):
-        variants = None
+        variant_pairs = []
+        cna_pairs = []
 
         if isinstance( patient_id, str ):
-            variants = self.get_variants( patient_id )
+            variant_pairs = self.read_variant_pairs()
+            cna_pairs = self.read_cna_pairs()
         elif isinstance( patient_id, list ):
-            variants = patient_id
+            variant_pairs = patient_id
 
-        if variants == None:
+        if not variant_pairs + cna_pairs:
             return None
 
         report = {}
@@ -115,7 +131,11 @@ class TumorBoardAgent:
             'pc_links': {}
         }
 
-        threads = list(map(lambda v: threading.Thread(target=self.fill_variant_report, args=(v,report,pc_evidences)), variants))
+        altered_genes = list(map(lambda p: p[0], variant_pairs + cna_pairs))
+        threads = list(map(lambda v:
+                           threading.Thread(target=self.fill_variant_report,
+                                            args=(v, report, pc_evidences)),
+                           altered_genes))
 
         for thread in threads:
             thread.start()
@@ -126,18 +146,21 @@ class TumorBoardAgent:
         self.tumor_board_report = report
         self.pc_evidences = pc_evidences
 
-        report_sum = functools.reduce(lambda a,b : Counter(a)+Counter(b),report.values())
+        report_sum = functools.reduce(lambda a, b: Counter(a) + Counter(b),
+                                      report.values())
         most_common = report_sum.most_common()
-        res = []
+        sorted_neighbors = []
 
         for e in most_common:
             score = e[1]
             gene = e[0]
             if score > SCORE_THRESHOLD:
-                res.append(gene)
+                sorted_neighbors.append(gene)
 
-        self.sorted_results = res
-        return res
+        self.sorted_neighbors = sorted_neighbors
+        self.variant_pairs = variant_pairs
+        self.cna_pairs = cna_pairs
+        return sorted_neighbors
 
     def get_evidences_for(self, gene1, gene2):
         # TODO: throw error if self.pc_evidences is not set
@@ -166,18 +189,35 @@ class TumorBoardAgent:
 
         return res
 
-    def get_top_k_res(self, k):
-        # TODO: throw error if self.sorted_results is not set
-        return self.sorted_results[:k]
+    def get_top_neighbors(self, k):
+        # TODO: throw error if self.sorted_neighbors is not set
+        return self.sorted_neighbors[:k]
+
+    def get_important_neighbors_of_gene(self, gene, k=None):
+        if gene not in self.tumor_board_report:
+            return None
+
+        gene_report = self.tumor_board_report[gene]
+        gene_neighbors = gene_report.keys()
+        important_neighbors = self.get_top_neighbors(None)
+
+        l = list(set(important_neighbors) & set(gene_neighbors))
+        l.sort(key=lambda n: gene_report[n], reverse=True)
+
+        return l[:k]
+
+
+    def get_variant_pairs(self):
+        return self.variant_pairs
 
     def why_important(self, gene, k=2):
         variant_scores = {}
         # TODO throw error if self.tumor_board_report is not set
-        for variant in self.tumor_board_report:
-            neighbours = self.tumor_board_report[variant]
-            if gene in neighbours:
-                score = neighbours.get(gene)
-                variant_scores[variant] = score
+        for variant_gene in self.tumor_board_report:
+            neighbors = self.tumor_board_report[variant_gene]
+            if gene in neighbors:
+                score = neighbors.get(gene)
+                variant_scores[variant_gene] = score
 
         c = Counter(variant_scores)
         top_most_tuples = c.most_common(k)
@@ -185,11 +225,11 @@ class TumorBoardAgent:
 
         return top_most_names
 
-    def fill_variant_report(self, variant, report, pc_evidences):
-        variant = variant.upper()
+    def fill_variant_report(self, variant_gene, report, pc_evidences):
+        variant_gene = variant_gene.upper()
         score = 0
 
-        neighbours = set()
+        neighbors = set()
         var_pubmed_ids = {}
         var_pc_links = {}
 
@@ -199,7 +239,7 @@ class TumorBoardAgent:
         changes_state_of_variant = set()
         state_changed_by_variant = set()
 
-        r = self.query_pc( variant )
+        r = TumorBoardAgent.query_pc_neighborhood( variant_gene )
         text = r.text
         lines = text.splitlines()
 
@@ -219,14 +259,14 @@ class TumorBoardAgent:
             pubmed_ids = split_evidence(parts[4])
             pc_links = split_evidence(parts[6])
 
-            var_eq_e1 = entity1 == variant
-            var_eq_e2 = entity2 == variant
+            var_eq_e1 = entity1 == variant_gene
+            var_eq_e2 = entity2 == variant_gene
 
             if not var_eq_e1 and not var_eq_e2:
-                raise Exception('One of entity names should match the variant name where variant name is {} and the entitiy names are {}, {}', variant, entity1, entity2)
+                raise Exception('One of entity names should match the variant name where variant name is {} and the entitiy names are {}, {}', variant_gene, entity1, entity2)
 
             other_side = entity2 if var_eq_e1 else entity1
-            neighbours.add(other_side)
+            neighbors.add(other_side)
 
             n_pubmed_ids = var_pubmed_ids.get( other_side, set() )
             n_pc_links = var_pc_links.get( other_side, set() )
@@ -261,54 +301,197 @@ class TumorBoardAgent:
 
         scores = {}
 
-        for neighbour in neighbours:
+        for neighbor in neighbors:
             score = 0
-            if neighbour in exp_controlled_by_variant:
+            if neighbor in exp_controlled_by_variant:
                 score += SCORES.EXP_CONTROLLED_BY_VARIANT
-            if neighbour in controls_exp_of_variant:
+            if neighbor in controls_exp_of_variant:
                 score += SCORES.CONTROLS_EXP_OF_VARIANT
-            if neighbour in in_complex_with_variant:
+            if neighbor in in_complex_with_variant:
                 score += SCORES.IN_COMPLEX_WITH_VARIANT
-            if neighbour in changes_state_of_variant:
+            if neighbor in changes_state_of_variant:
                 score += SCORES.CHANGES_STATE_OF_VARIANT
-            if neighbour in state_changed_by_variant:
+            if neighbor in state_changed_by_variant:
                 score += SCORES.STATE_CHANGED_BY_VARIANT
-            if neighbour in SPECIFIC_CENSUS_GENE_SET:
+            if neighbor in SPECIFIC_CENSUS_GENE_SET:
                 score += SCORES.SPECIFIC_CENSUS_GENE
-            if neighbour in OTHER_CENSUS_GENE_SET:
+            if neighbor in OTHER_CENSUS_GENE_SET:
                 score += SCORES.OTHER_CENSUS_GENE
-            if neighbour in SPECIFIC_FDA_DRUG_TARGETS:
-                score += SPECIFIC_FDA_DRUG_TARGETS[neighbour] * SCORES.SPECIFIC_FDA_DRUG_TARGET
-            if neighbour in OTHER_FDA_DRUG_TARGETS:
-                score += OTHER_FDA_DRUG_TARGETS[neighbour] * SCORES.OTHER_FDA_DRUG_TARGET
+            if neighbor in SPECIFIC_FDA_DRUG_TARGETS:
+                score += SPECIFIC_FDA_DRUG_TARGETS[neighbor] * SCORES.SPECIFIC_FDA_DRUG_TARGET
+            if neighbor in OTHER_FDA_DRUG_TARGETS:
+                score += OTHER_FDA_DRUG_TARGETS[neighbor] * SCORES.OTHER_FDA_DRUG_TARGET
 
             if score > 0:
-                scores[neighbour] = score
+                scores[neighbor] = score
 
-        report[ variant ] = scores
-        pc_evidences[ 'pubmed_ids' ][ variant ] = var_pubmed_ids
-        pc_evidences[ 'pc_links' ][ variant ] = var_pc_links
+        report[ variant_gene ] = scores
+        pc_evidences[ 'pubmed_ids' ][ variant_gene ] = var_pubmed_ids
+        pc_evidences[ 'pc_links' ][ variant_gene ] = var_pc_links
 
-    def get_variants(self, patient_id):
-        variants = None
+    def get_neighbors_sif(self, gene, max_lines=None):
+        self.create_cn_mutect_file(gene)
+        system('java -jar {} {}'.format(CANCER_NETWORK_JAR_PATH, CANCER_NETWORK_PATH))
 
-        def on_data(tabs):
-            if tabs[0] == patient_id:
-                nonlocal variants
-                variants = tabs[1].split(',')
-                # Signal to end the streaming by returning True
-                return True
+        neighbors = self.get_important_neighbors_of_gene(gene)
+        neighbors = list(map(lambda n: n.lower(), neighbors))
 
-        del_file_stream = DelimitedFileStream()
-        del_file_stream.parse_file( file_path=PATIENT_VARIANTS_PATH, on_data=on_data )
+        def get_score(line):
+            tabs = line.split('\t')
 
-        return variants
+            score = 0
 
-    def query_pc(self, variant):
-        params = self.get_pc_query_params(variant)
-        r = requests.get(PC_URL, params)
+            if len(tabs) > 1:
+                gene1 = tabs[0].lower()
+                gene2 = tabs[1].lower()
+
+                if gene1 in neighbors:
+                    score += neighbors.index(gene1)
+
+                if gene2 in neighbors:
+                    score += neighbors.index(gene2)
+
+            return score
+
+        def must_include(line):
+            return get_score(line) > 0
+
+
+        text = TumorBoardAgent.read_text_file(CN_SIF_OUTPUT_PATH)
+        lines = text.splitlines()
+
+        if max_lines and len(lines) > max_lines:
+            lines = heapq.nlargest(max_lines, lines, key=get_score)
+
+        lines = filter(must_include, lines)
+
+        return '\n'.join(lines)
+
+    @staticmethod
+    def get_clinical_trials(drugs):
+        params = {'cond': 'breast_cancer', 'term': drugs[0],
+                  'down_count': 10000, 'down_fmt': 'tsv'}
+
+        res = requests.get(CLINICAL_TRIALS_URL, params)
+        text = res.text
+        lines = text.splitlines()
+        lines = list(map(lambda l: l.lower(), lines))
+
+        def valid_line(line):
+            # print(line)
+            for drug in drugs:
+                search_str = 'drug: ' + drug.lower()
+                if search_str not in line:
+                    return False
+
+            return True
+
+        def extract_info(line):
+            vals = line.split('\t')
+            title = vals[1]
+            status = vals[2]
+            url = vals[7]
+
+            return {'title': title, 'status': status, 'url': url}
+
+        lines = filter(valid_line, lines)
+        res = list(map(extract_info, lines))
+
+        return res
+
+    def create_cn_mutect_file(self, gene):
+        with open(CN_MUTEC_FILE_PATH, 'w') as mutect_file:
+            # The first line is for the header
+            mutect_file.write('\n')
+
+            # Only fill the colomn for the gene, fill the rest with a space char
+            arr = [' \t'] * 5 + [ gene ] + ['\t '] * 9
+            line = ''.join(arr)
+            # The second line is for the gene of interest
+            mutect_file.write(line)
+            mutect_file.write('\n')
+
+    def read_variant_pairs(self):
+        mutations_by_gene = defaultdict(list)
+        for mutation in self.patient.mutations:
+            gene_name = get_hgnc_name(
+                get_hgnc_from_entrez(str(mutation['entrezGeneId'])))
+            change = mutation['proteinChange']
+            mutations_by_gene[gene_name].append(change)
+        return list(mutations_by_gene.items())
+
+    def read_cna_pairs(self):
+        alteration_map = {
+            -2: 'DEL',
+            -1: 'del',
+            0: 'neu',
+            1: 'amp',
+            2: 'AMP',
+        }
+        cna_pairs = []
+        for cna in self.patient.cnas:
+            gene_name = get_hgnc_name(
+                get_hgnc_from_entrez(str(cna['entrezGeneId'])))
+            alteration_str = alteration_map[cna['alteration']]
+            cna_pairs.append((gene_name, alteration_str))
+        return cna_pairs
+
+    @staticmethod
+    def query_pc_neighborhood(variant_gene):
+        params = TumorBoardAgent.get_pc_query_neighborhood_params(variant_gene)
+        r = requests.get(PC_NEIGHBORHOOD_URL, params)
         return r
 
-    def get_pc_query_params(self, variant):
-        params = { 'limit': PC_LIMIT, 'direction': PC_DIR, 'pattern': PC_PATTERNS, 'source': variant }
+    @staticmethod
+    def get_pc_query_neighborhood_params(variant_gene):
+        DIR = 'BOTHSTREAM'
+        PATTERNS = ['CONTROLS_STATE_CHANGE_OF', 'CONTROLS_EXPRESSION_OF', 'IN_COMPLEX_WITH']
+        params = { 'limit': PC_LIMIT, 'direction': DIR, 'pattern': PATTERNS, 'source': variant_gene }
         return params
+
+    @staticmethod
+    def query_pc_pathsbetween(sources):
+        params = TumorBoardAgent.get_pc_query_pathsbetween_params(sources)
+        r = requests.get(PC_GRAPH_URL, params)
+        return r
+
+    @staticmethod
+    def query_pc_pathsfromto(sources, targets):
+        params = TumorBoardAgent.get_pc_query_pathsfromto_params(sources, targets)
+        r = requests.get(PC_GRAPH_URL, params)
+        return r
+
+    @staticmethod
+    def get_pc_query_pathsbetween_params(sources):
+        KIND = 'PATHSBETWEEN'
+        params = { 'kind': KIND, 'source': sources }
+        return params
+
+    @staticmethod
+    def get_pc_query_pathsfromto_params(sources, targets):
+        KIND = 'PATHSFROMTO'
+        params = { 'kind': KIND, 'source': sources, 'target': targets }
+        return params
+
+
+    @staticmethod
+    def get_pathsbetween_genes(sources, max_conversions=DEFAULT_MAX_CONVERSIONS):
+        r = TumorBoardAgent.query_pc_pathsbetween(sources)
+        text = r.text
+
+        sbgn = biopax_text_to_sbgn(text)
+        return sbgn
+
+    @staticmethod
+    def get_pathsfromto_genes(sources, targets, max_conversions=DEFAULT_MAX_CONVERSIONS):
+        r = TumorBoardAgent.query_pc_pathsfromto(sources, targets)
+        text = r.text
+
+        sbgn = biopax_text_to_sbgn(text)
+        return sbgn
+
+    @staticmethod
+    def read_text_file(f):
+        with open(f, 'r') as content_file:
+            content = content_file.read()
+            return content
