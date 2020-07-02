@@ -1,6 +1,5 @@
 import requests
 import threading
-from enum import Enum
 import functools
 from collections import Counter
 from .parser.delimited_file_stream import DelimitedFileStream
@@ -9,12 +8,15 @@ from os import path, system
 import heapq
 import warnings
 import pandas
+from bioagents.cbio_client import *
 
 file_dir = path.dirname(path.abspath(__file__))
 parent_dir = path.dirname(file_dir)
 
+
 def join_path(p):
     return path.join(parent_dir, p)
+
 
 PATIENT_VARIANTS_PATH = join_path('input/patient_variants.txt')
 CENSUS_PATH = join_path('input/census.tsv')
@@ -97,6 +99,7 @@ def get_census_gene_sets():
 [SPECIFIC_FDA_DRUG_TARGETS, OTHER_FDA_DRUG_TARGETS] = get_fda_drug_targets()
 [SPECIFIC_CENSUS_GENE_SET, OTHER_CENSUS_GENE_SET] = get_census_gene_sets()
 
+
 class TumorBoardAgent:
 
     def __init__(self, patient_id=None):
@@ -105,17 +108,18 @@ class TumorBoardAgent:
         self.pc_evidences = None
         self.patient_id = patient_id
         if patient_id is not None:
+            self.patient = Patient(patient_id)
             self.create_tumor_board_report(self.patient_id)
 
     def create_tumor_board_report(self, patient_id):
         variant_pairs = None
 
         if isinstance( patient_id, str ):
-            variant_pairs = TumorBoardAgent.read_variant_pairs( patient_id )
+            variant_pairs = self.read_variant_pairs()
         elif isinstance( patient_id, list ):
             variant_pairs = patient_id
 
-        if variant_pairs == None:
+        if variant_pairs is None:
             return None
 
         report = {}
@@ -125,7 +129,10 @@ class TumorBoardAgent:
         }
 
         variant_genes = list(map(lambda p: p[0], variant_pairs))
-        threads = list(map(lambda v: threading.Thread(target=self.fill_variant_report, args=(v,report,pc_evidences)), variant_genes))
+        threads = list(map(lambda v:
+                           threading.Thread(target=self.fill_variant_report,
+                                            args=(v, report, pc_evidences)),
+                           variant_genes))
 
         for thread in threads:
             thread.start()
@@ -136,7 +143,8 @@ class TumorBoardAgent:
         self.tumor_board_report = report
         self.pc_evidences = pc_evidences
 
-        report_sum = functools.reduce(lambda a,b : Counter(a)+Counter(b),report.values())
+        report_sum = functools.reduce(lambda a, b: Counter(a) + Counter(b),
+                                      report.values())
         most_common = report_sum.most_common()
         sorted_neighbors = []
 
@@ -497,11 +505,16 @@ class TumorBoardAgent:
         mutations = TumorBoardAgent.query_cbio_mutations()
         return TumorBoardAgent.get_grouped_cbio_data(mutations, 'proteinChange')
 
-    @staticmethod
-    def read_variant_pairs(patient_id):
-        mutations_by_pid = TumorBoardAgent.get_grouped_cbio_mutations()
-        mutations = mutations_by_pid.get(patient_id)
-        return mutations
+    def read_variant_pairs(self):
+        from indra.databases.hgnc_client import \
+            get_hgnc_from_entrez, get_hgnc_name
+        pairs = []
+        for mutation in self.patient.mutations:
+            gene_name = get_hgnc_name(
+                get_hgnc_from_entrez(str(mutation['entrezGeneId'])))
+            change = mutation['proteinChange']
+            pairs.append((gene_name, change))
+        return pairs
 
     @staticmethod
     def read_cna_pairs(patient_id):
