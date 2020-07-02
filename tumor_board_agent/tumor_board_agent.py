@@ -1,6 +1,4 @@
-import requests
 import threading
-from enum import Enum
 import functools
 from collections import Counter
 from .parser.delimited_file_stream import DelimitedFileStream
@@ -9,12 +7,17 @@ from os import path, system
 import heapq
 import warnings
 import pandas
+from bioagents.cbio_client import *
+from indra.databases.hgnc_client import \
+    get_hgnc_from_entrez, get_hgnc_name
 
 file_dir = path.dirname(path.abspath(__file__))
 parent_dir = path.dirname(file_dir)
 
+
 def join_path(p):
     return path.join(parent_dir, p)
+
 
 PATIENT_VARIANTS_PATH = join_path('input/patient_variants.txt')
 CENSUS_PATH = join_path('input/census.tsv')
@@ -24,7 +27,6 @@ CN_MUTEC_FILE_PATH = path.join(CANCER_NETWORK_PATH, 'mutec.csv')
 CN_SIF_OUTPUT_PATH = path.join(CANCER_NETWORK_PATH, 'network.sif')
 CANCER_NETWORK_JAR_PATH = join_path('jar/cancer-network.jar')
 CLINICAL_TRIALS_URL = 'https://clinicaltrials.gov/ct2/results/download_fields'
-CBIO_MUTATIONS_URL = 'https://www.cbioportal.org/api/molecular-profiles/msk_impact_2017_mutations/mutations'
 
 SCORE_THRESHOLD = 10
 PC_NEIGHBORHOOD_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
@@ -96,6 +98,7 @@ def get_census_gene_sets():
 [SPECIFIC_FDA_DRUG_TARGETS, OTHER_FDA_DRUG_TARGETS] = get_fda_drug_targets()
 [SPECIFIC_CENSUS_GENE_SET, OTHER_CENSUS_GENE_SET] = get_census_gene_sets()
 
+
 class TumorBoardAgent:
 
     def __init__(self, patient_id=None):
@@ -103,18 +106,23 @@ class TumorBoardAgent:
         self.sorted_neighbors = None
         self.pc_evidences = None
         self.patient_id = patient_id
+        self.variant_pairs = []
+        self.cna_pairs = []
         if patient_id is not None:
+            self.patient = Patient(patient_id)
             self.create_tumor_board_report(self.patient_id)
 
     def create_tumor_board_report(self, patient_id):
-        variant_pairs = None
+        variant_pairs = []
+        cna_pairs = []
 
         if isinstance( patient_id, str ):
-            variant_pairs = TumorBoardAgent.read_variant_pairs( patient_id )
+            variant_pairs = self.read_variant_pairs()
+            cna_pairs = self.read_cna_pairs()
         elif isinstance( patient_id, list ):
             variant_pairs = patient_id
 
-        if variant_pairs == None:
+        if not variant_pairs + cna_pairs:
             return None
 
         report = {}
@@ -123,8 +131,11 @@ class TumorBoardAgent:
             'pc_links': {}
         }
 
-        variant_genes = list(map(lambda p: p[0], variant_pairs))
-        threads = list(map(lambda v: threading.Thread(target=self.fill_variant_report, args=(v,report,pc_evidences)), variant_genes))
+        altered_genes = list(map(lambda p: p[0], variant_pairs + cna_pairs))
+        threads = list(map(lambda v:
+                           threading.Thread(target=self.fill_variant_report,
+                                            args=(v, report, pc_evidences)),
+                           altered_genes))
 
         for thread in threads:
             thread.start()
@@ -135,7 +146,8 @@ class TumorBoardAgent:
         self.tumor_board_report = report
         self.pc_evidences = pc_evidences
 
-        report_sum = functools.reduce(lambda a,b : Counter(a)+Counter(b),report.values())
+        report_sum = functools.reduce(lambda a, b: Counter(a) + Counter(b),
+                                      report.values())
         most_common = report_sum.most_common()
         sorted_neighbors = []
 
@@ -147,6 +159,7 @@ class TumorBoardAgent:
 
         self.sorted_neighbors = sorted_neighbors
         self.variant_pairs = variant_pairs
+        self.cna_pairs = cna_pairs
         return sorted_neighbors
 
     def get_evidences_for(self, gene1, gene2):
@@ -357,9 +370,7 @@ class TumorBoardAgent:
     @staticmethod
     def get_clinical_trials(drugs):
         params = {'cond': 'breast_cancer', 'term': drugs[0],
-                    'down_count': 10000, 'down_fmt':'tsv'}
-
-        r = requests.get(CLINICAL_TRIALS_URL, params)
+                  'down_count': 10000, 'down_fmt': 'tsv'}
 
         res = requests.get(CLINICAL_TRIALS_URL, params)
         text = res.text
@@ -381,7 +392,7 @@ class TumorBoardAgent:
             status = vals[2]
             url = vals[7]
 
-            return { 'title': title, 'status': status, 'url': url }
+            return {'title': title, 'status': status, 'url': url}
 
         lines = filter(valid_line, lines)
         res = list(map(extract_info, lines))
@@ -400,63 +411,30 @@ class TumorBoardAgent:
             mutect_file.write(line)
             mutect_file.write('\n')
 
-    @staticmethod
-    def query_cbio_mutations_params(page_number):
-        sample_list_id = 'msk_impact_2017_all'
-        projection = 'DETAILED'
-        page_size = '50000'
-        direction = 'ASC'
+    def read_variant_pairs(self):
+        mutations_by_gene = defaultdict(list)
+        for mutation in self.patient.mutations:
+            gene_name = get_hgnc_name(
+                get_hgnc_from_entrez(str(mutation['entrezGeneId'])))
+            change = mutation['proteinChange']
+            mutations_by_gene[gene_name].append(change)
+        return list(mutations_by_gene.items())
 
-        params = { 'sampleListId': sample_list_id,
-                    'projection': projection,
-                    'pageSize': page_size,
-                    'pageNumber': page_number,
-                    'direction': direction }
-
-        return params
-
-    @staticmethod
-    def query_cbio_mutations(page_number=0):
-        # print(page_number)
-        params = TumorBoardAgent.query_cbio_mutations_params(page_number)
-        # print(params)
-        r = requests.get(CBIO_MUTATIONS_URL, params)
-        js = r.json()
-
-        if len(js) > 0:
-            print(len(js))
-            return [*js, *TumorBoardAgent.query_cbio_mutations(page_number + 1)]
-
-        return []
-
-    @staticmethod
-    def get_grouped_cbio_mutations():
-        mutations = TumorBoardAgent.query_cbio_mutations()
-        groups = pandas.DataFrame(mutations).groupby("patientId").groups
-        grouped = {}
-        for patient_id in list(groups.keys()):
-            indices = groups.get(patient_id)
-            gene_variant = list(map(lambda i: [mutations[i].get('gene').get('hugoGeneSymbol'), mutations[i].get('proteinChange')],indices))
-            variants_by_gene = {}
-            for p in gene_variant:
-                gene = str(p[0])
-                variant = p[1]
-                variants = variants_by_gene.get(gene, [])
-                variants.append(variant)
-                variants_by_gene[gene] = variants
-
-            genes = list(variants_by_gene.keys())
-            pairs = list( map( lambda g: [ g, variants_by_gene[ g ] ], genes ) )
-            grouped[patient_id] = pairs
-
-
-        return grouped
-
-    @staticmethod
-    def read_variant_pairs(patient_id):
-        mutations_by_pid = TumorBoardAgent.get_grouped_cbio_mutations()
-        mutations = mutations_by_pid.get(patient_id)
-        return mutations
+    def read_cna_pairs(self):
+        alteration_map = {
+            -2: 'DEL',
+            -1: 'del',
+            0: 'neu',
+            1: 'amp',
+            2: 'AMP',
+        }
+        cna_pairs = []
+        for cna in self.patient.cnas:
+            gene_name = get_hgnc_name(
+                get_hgnc_from_entrez(str(cna['entrezGeneId'])))
+            alteration_str = alteration_map[cna['alteration']]
+            cna_pairs.append((gene_name, alteration_str))
+        return cna_pairs
 
     @staticmethod
     def query_pc_neighborhood(variant_gene):
