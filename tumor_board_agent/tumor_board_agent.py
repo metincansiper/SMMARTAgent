@@ -27,8 +27,6 @@ CN_MUTEC_FILE_PATH = path.join(CANCER_NETWORK_PATH, 'mutec.csv')
 CN_SIF_OUTPUT_PATH = path.join(CANCER_NETWORK_PATH, 'network.sif')
 CANCER_NETWORK_JAR_PATH = join_path('jar/cancer-network.jar')
 CLINICAL_TRIALS_URL = 'https://clinicaltrials.gov/ct2/results/download_fields'
-CBIO_MUTATIONS_URL = 'https://www.cbioportal.org/api/molecular-profiles/msk_impact_2017_mutations/mutations'
-CBIO_CNAS_URL = 'https://www.cbioportal.org/api/molecular-profiles/msk_impact_2017_cna/discrete-copy-number'
 
 SCORE_THRESHOLD = 10
 PC_NEIGHBORHOOD_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
@@ -412,102 +410,6 @@ class TumorBoardAgent:
             # The second line is for the gene of interest
             mutect_file.write(line)
             mutect_file.write('\n')
-
-    @staticmethod
-    def query_cbio_mutations_params(page_number):
-        sample_list_id = 'msk_impact_2017_all'
-        projection = 'DETAILED'
-        page_size = '50000'
-        direction = 'ASC'
-
-        params = { 'sampleListId': sample_list_id,
-                    'projection': projection,
-                    'pageSize': page_size,
-                    'pageNumber': page_number,
-                    'direction': direction }
-
-        return params
-
-    @staticmethod
-    def query_cbio_cnas_params():
-        discrete_copy_number_event_type = 'HOMDEL_AND_AMP'
-        molecular_profile_id = 'msk_impact_2017_cna'
-        sample_list_id = 'msk_impact_2017_all'
-        projection = 'DETAILED'
-        # page_size = '50000'
-        direction = 'ASC'
-
-        params = { 'discreteCopyNumberEventType': discrete_copy_number_event_type,
-                    'sampleListId': sample_list_id,
-                    'molecularProfileId': molecular_profile_id,
-                    'projection': projection,
-                    # 'pageSize': page_size,
-                    # 'pageNumber': page_number,
-                    'direction': direction }
-
-        return params
-
-    @staticmethod
-    def query_cbio_mutations(page_number=0):
-        # print(page_number)
-        params = TumorBoardAgent.query_cbio_mutations_params(page_number)
-        # print(params)
-        r = requests.get(CBIO_MUTATIONS_URL, params)
-        js = r.json()
-
-        if len(js) > 0:
-            print(len(js))
-            return [*js, *TumorBoardAgent.query_cbio_mutations(page_number + 1)]
-
-        return []
-
-    @staticmethod
-    def query_cbio_cnas():
-        # print(page_number)
-        params = TumorBoardAgent.query_cbio_cnas_params()
-        # print(params)
-        r = requests.get(CBIO_CNAS_URL, params)
-        js = r.json()
-
-        return js
-        # if len(js) > 0:
-        #     print(len(js))
-        #     return [*js, *TumorBoardAgent.query_cbio_cnas(page_number + 1)]
-        #
-        # return []
-
-    @staticmethod
-    def get_grouped_cbio_cnas():
-        cnas = TumorBoardAgent.query_cbio_cnas()
-        return TumorBoardAgent.get_grouped_cbio_data(cnas, 'alteration')
-
-    @staticmethod
-    def get_grouped_cbio_data(cbio_data, field_name):
-        groups = pandas.DataFrame(cbio_data).groupby('patientId').groups
-
-        grouped = {}
-        for patient_id in list(groups.keys()):
-            indices = groups.get(patient_id)
-            gene_prop = list(map(lambda i: [cbio_data[i].get('gene').get('hugoGeneSymbol'), cbio_data[i].get(field_name)],indices))
-            props_by_gene = {}
-            for p in gene_prop:
-                gene = str(p[0])
-                prop = p[1]
-                props = props_by_gene.get(gene, [])
-                props.append(prop)
-                props_by_gene[gene] = props
-
-            genes = list(props_by_gene.keys())
-            pairs = list( map( lambda g: [ g, props_by_gene[ g ] ], genes ) )
-            grouped[patient_id] = pairs
-
-
-        return grouped
-
-    @staticmethod
-    def get_grouped_cbio_mutations():
-        mutations = TumorBoardAgent.query_cbio_mutations()
-        return TumorBoardAgent.get_grouped_cbio_data(mutations, 'proteinChange')
 
     def read_variant_pairs(self):
         mutations_by_gene = defaultdict(list)
