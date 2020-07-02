@@ -1,4 +1,3 @@
-import requests
 import threading
 import functools
 from collections import Counter
@@ -9,6 +8,8 @@ import heapq
 import warnings
 import pandas
 from bioagents.cbio_client import *
+from indra.databases.hgnc_client import \
+    get_hgnc_from_entrez, get_hgnc_name
 
 file_dir = path.dirname(path.abspath(__file__))
 parent_dir = path.dirname(file_dir)
@@ -107,19 +108,23 @@ class TumorBoardAgent:
         self.sorted_neighbors = None
         self.pc_evidences = None
         self.patient_id = patient_id
+        self.variant_pairs = []
+        self.cna_pairs = []
         if patient_id is not None:
             self.patient = Patient(patient_id)
             self.create_tumor_board_report(self.patient_id)
 
     def create_tumor_board_report(self, patient_id):
-        variant_pairs = None
+        variant_pairs = []
+        cna_pairs = []
 
         if isinstance( patient_id, str ):
             variant_pairs = self.read_variant_pairs()
+            cna_pairs = self.read_cna_pairs()
         elif isinstance( patient_id, list ):
             variant_pairs = patient_id
 
-        if variant_pairs is None:
+        if not variant_pairs + cna_pairs:
             return None
 
         report = {}
@@ -128,11 +133,11 @@ class TumorBoardAgent:
             'pc_links': {}
         }
 
-        variant_genes = list(map(lambda p: p[0], variant_pairs))
+        altered_genes = list(map(lambda p: p[0], variant_pairs + cna_pairs))
         threads = list(map(lambda v:
                            threading.Thread(target=self.fill_variant_report,
                                             args=(v, report, pc_evidences)),
-                           variant_genes))
+                           altered_genes))
 
         for thread in threads:
             thread.start()
@@ -156,6 +161,7 @@ class TumorBoardAgent:
 
         self.sorted_neighbors = sorted_neighbors
         self.variant_pairs = variant_pairs
+        self.cna_pairs = cna_pairs
         return sorted_neighbors
 
     def get_evidences_for(self, gene1, gene2):
@@ -504,8 +510,6 @@ class TumorBoardAgent:
         return TumorBoardAgent.get_grouped_cbio_data(mutations, 'proteinChange')
 
     def read_variant_pairs(self):
-        from indra.databases.hgnc_client import \
-            get_hgnc_from_entrez, get_hgnc_name
         mutations_by_gene = defaultdict(list)
         for mutation in self.patient.mutations:
             gene_name = get_hgnc_name(
@@ -514,11 +518,21 @@ class TumorBoardAgent:
             mutations_by_gene[gene_name].append(change)
         return list(mutations_by_gene.items())
 
-    @staticmethod
-    def read_cna_pairs(patient_id):
-        cnas_by_pid = TumorBoardAgent.get_grouped_cbio_cnas()
-        cnas = cnas_by_pid.get(patient_id)
-        return cnas
+    def read_cna_pairs(self):
+        alteration_map = {
+            -2: 'DEL',
+            -1: 'del',
+            0: 'neu',
+            1: 'amp',
+            2: 'AMP',
+        }
+        cna_pairs = []
+        for cna in self.patient.cnas:
+            gene_name = get_hgnc_name(
+                get_hgnc_from_entrez(str(cna['entrezGeneId'])))
+            alteration_str = alteration_map[cna['alteration']]
+            cna_pairs.append((gene_name, alteration_str))
+        return cna_pairs
 
     @staticmethod
     def query_pc_neighborhood(variant_gene):
