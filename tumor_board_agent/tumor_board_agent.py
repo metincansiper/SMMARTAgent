@@ -1,5 +1,6 @@
 import threading
 import functools
+import itertools
 from collections import Counter
 from .parser.delimited_file_stream import DelimitedFileStream
 from .util.paxtools import biopax_text_to_sbgn, DEFAULT_MAX_CONVERSIONS
@@ -39,15 +40,17 @@ SPECIFIC_FDA_DISASE_TYPES = {'Breast cancer', 'Pancreatic cancer', 'Prostate can
 SPECIFIC_CENSUS_DISASE_TYPES = {'breast cancer', 'breast'}
 
 class SCORES:
-    EXP_CONTROLLED_BY_VARIANT = 5.0
-    CONTROLS_EXP_OF_VARIANT = 5.0
-    IN_COMPLEX_WITH_VARIANT = 5.0
-    CHANGES_STATE_OF_VARIANT = 5.0
-    STATE_CHANGED_BY_VARIANT = 5.0
-    SPECIFIC_CENSUS_GENE = 5.0
-    OTHER_CENSUS_GENE = 2.5
-    SPECIFIC_FDA_DRUG_TARGET = 5.0
-    OTHER_FDA_DRUG_TARGET = 2.5
+    EXP_CONTROLLED_BY_VARIANT = 10.0
+    CONTROLS_EXP_OF_VARIANT = 10.0
+    IN_COMPLEX_WITH_VARIANT = 10.0
+    CHANGES_STATE_OF_VARIANT = 10.0
+    STATE_CHANGED_BY_VARIANT = 10.0
+    SPECIFIC_CENSUS_GENE = 10.0
+    OTHER_CENSUS_GENE = 5.0
+    SPECIFIC_FDA_DRUG_TARGET = 10.0
+    OTHER_FDA_DRUG_TARGET = 5.0
+    VARIANT = 20.0
+    CNA = 20.0
 
 def get_fda_drug_targets():
 
@@ -131,7 +134,10 @@ class TumorBoardAgent:
             'pc_links': {}
         }
 
-        altered_genes = list(map(lambda p: p[0], variant_pairs + cna_pairs))
+        variant_genes = list(map(lambda p: p[0], variant_pairs))
+        cna_genes = list(map(lambda p: p[0], cna_pairs))
+        altered_genes = variant_genes + cna_genes
+
         threads = list(map(lambda v:
                            threading.Thread(target=self.fill_variant_report,
                                             args=(v, report, pc_evidences)),
@@ -148,6 +154,14 @@ class TumorBoardAgent:
 
         report_sum = functools.reduce(lambda a, b: Counter(a) + Counter(b),
                                       report.values())
+
+        # TODO: enable or update and enable based on requirements.
+        # for g in variant_genes:
+        #     report_sum[ g ] = report_sum[ g ] + SCORES.VARIANT;
+        #
+        # for g in cna_genes:
+        #     report_sum[ g ] = report_sum[ g ] + SCORES.CNA;
+
         most_common = report_sum.most_common()
         sorted_neighbors = []
 
@@ -378,7 +392,6 @@ class TumorBoardAgent:
         lines = list(map(lambda l: l.lower(), lines))
 
         def valid_line(line):
-            # print(line)
             for drug in drugs:
                 search_str = 'drug: ' + drug.lower()
                 if search_str not in line:
@@ -435,6 +448,68 @@ class TumorBoardAgent:
             alteration_str = alteration_map[cna['alteration']]
             cna_pairs.append((gene_name, alteration_str))
         return cna_pairs
+
+    @staticmethod
+    def flatten_2d_list(list2d):
+        merged = list(itertools.chain(*list2d))
+        return merged
+
+    @staticmethod
+    def query_fda_drugs(disease_name, skip=0, so_far=[]):
+        limit = 500
+        threshold = 50
+
+        if len(so_far) > threshold:
+            return so_far
+
+        res = TumorBoardAgent.query_fda_drugs_in_range(disease_name, skip, limit)
+
+        if len(res) == 0:
+            return so_far
+
+        so_far = list(set(so_far + res))
+        skip = skip + limit
+        return TumorBoardAgent.query_fda_drugs(disease_name, skip, so_far)
+
+
+    @staticmethod
+    def query_fda_drugs_in_range(disease_name, skip, limit):
+        disease_name = disease_name.upper()
+        FDA_EVENT_URL = 'https://api.fda.gov/drug/event.json'
+        search = 'patient.drug.drugindication:"' + disease_name + '"'
+
+        params = { 'limit': limit, 'search': search, 'skip': skip }
+
+        r = requests.get(FDA_EVENT_URL, params)
+        # r = requests.get('https://api.fda.gov/drug/event.json?search=patient.drug.drugindication:%22BREAST%20CANCER%22&limit=5')
+        js = r.json()
+
+
+        def get_drug_names(p):
+            drugs = p.get('drug')
+
+            def get_drug_name(d):
+                indication = d.get('drugindication', '').upper()
+                if indication != disease_name:
+                    return None
+                gnames = d.get('openfda', {}).get('generic_name')
+
+                if gnames != None and len(gnames) >= 0:
+                    return gnames[0]
+                return None
+
+            names = list(map(get_drug_name , drugs))
+            names = filter(lambda n: n != None, names)
+            # return TumorBoardAgent.flatten_2d_list(names)
+            return names
+
+        results = js.get('results')
+        patients = list(map(lambda r: r.get('patient'), results))
+        drugs = TumorBoardAgent.flatten_2d_list(list(map(get_drug_names, patients)))
+        drugs = list(set(drugs))
+
+        return drugs
+
 
     @staticmethod
     def query_pc_neighborhood(variant_gene):
