@@ -1,5 +1,6 @@
 import threading
 import functools
+from functools import lru_cache
 import itertools
 from collections import Counter
 from .parser.delimited_file_stream import DelimitedFileStream
@@ -14,6 +15,7 @@ from indra.databases.hgnc_client import \
 # TODO: Remove dependency to clare
 from clare.capabilities.util import get_agent_from_name
 from bioagents.dtda.dtda import DTDA
+from multiprocessing import Pool, cpu_count
 
 file_dir = path.dirname(path.abspath(__file__))
 parent_dir = path.dirname(file_dir)
@@ -40,8 +42,6 @@ PC_LIMIT = 1
 CONTROLS_EXPRESSION_OF = 'controls-expression-of'.upper()
 IN_COMPLEX_WITH = 'in-complex-with'.upper()
 CONTROLS_STATE_CHANGE_OF = 'controls-state-change-of'.upper()
-SPECIFIC_FDA_DISASE_TYPES = {'Breast cancer', 'Pancreatic cancer', 'Prostate cancer'}
-SPECIFIC_CENSUS_DISASE_TYPES = {'breast cancer', 'breast'}
 
 class SCORES:
     EXP_CONTROLLED_BY_VARIANT = 10.0
@@ -55,55 +55,6 @@ class SCORES:
     OTHER_FDA_DRUG_TARGET = 5.0
     VARIANT = 20.0
     CNA = 20.0
-
-def get_fda_drug_targets():
-
-    specific = {}
-    other = {}
-
-    def increment_field(related_map, field_name):
-        related_map[field_name] = related_map.get(field_name, 0) + 1
-
-    def on_data(tabs):
-        disase_types = set(tabs[1].split('; '))
-        genes = tabs[2].split('; ')
-
-        specific_disase_type = bool( disase_types & SPECIFIC_FDA_DISASE_TYPES )
-        related_map = specific if specific_disase_type else other
-
-        for gene in genes:
-            increment_field(related_map, gene)
-
-    del_file_stream = DelimitedFileStream()
-    del_file_stream.parse_file( file_path=FDA_DRUG_LIST_PATH, on_data=on_data )
-    return [specific, other]
-
-def get_census_gene_sets():
-    specific = set()
-    other = set()
-
-    def get_tumor_types_set(s):
-        return set(s.strip('"').split(', '))
-
-    def on_data(tabs):
-        tumor_types = get_tumor_types_set(tabs[9]) | get_tumor_types_set(tabs[10])
-        gene = tabs[0]
-
-        specific_tumor_type = bool( tumor_types & SPECIFIC_CENSUS_DISASE_TYPES )
-        related_set = specific if specific_tumor_type else other
-
-        related_set.add(gene)
-
-    if path.exists(CENSUS_PATH):
-        del_file_stream = DelimitedFileStream()
-        del_file_stream.parse_file( file_path=CENSUS_PATH, on_data=on_data )
-    else:
-        warnings.warn('Census input file is missing criteria will be executed without that!')
-
-    return [specific, other]
-
-[SPECIFIC_FDA_DRUG_TARGETS, OTHER_FDA_DRUG_TARGETS] = get_fda_drug_targets()
-[SPECIFIC_CENSUS_GENE_SET, OTHER_CENSUS_GENE_SET] = get_census_gene_sets()
 
 
 class TumorBoardAgent:
@@ -131,6 +82,12 @@ class TumorBoardAgent:
 
         if not variant_pairs + cna_pairs:
             return None
+
+        self.sample_info = self.patient.sample.clinical_info
+        self.disease_name = self.sample_info.get('CANCER_TYPE', 'cancer').lower()
+        self.specific_fda_drug_targets = TumorBoardAgent.query_target_genes(self.disease_name)
+        self.other_fda_drug_targets = TumorBoardAgent.query_target_genes(self.disease_name, False);
+        [self.specific_cencus_genes, self.other_cencus_genes] = TumorBoardAgent.get_census_gene_sets(self.disease_name)
 
         report = {}
         pc_evidences = {
@@ -178,6 +135,7 @@ class TumorBoardAgent:
         self.sorted_neighbors = sorted_neighbors
         self.variant_pairs = variant_pairs
         self.cna_pairs = cna_pairs
+
         return sorted_neighbors
 
     def get_evidences_for(self, gene1, gene2):
@@ -331,14 +289,14 @@ class TumorBoardAgent:
                 score += SCORES.CHANGES_STATE_OF_VARIANT
             if neighbor in state_changed_by_variant:
                 score += SCORES.STATE_CHANGED_BY_VARIANT
-            if neighbor in SPECIFIC_CENSUS_GENE_SET:
+            if neighbor in self.specific_cencus_genes:
                 score += SCORES.SPECIFIC_CENSUS_GENE
-            if neighbor in OTHER_CENSUS_GENE_SET:
+            if neighbor in self.other_cencus_genes:
                 score += SCORES.OTHER_CENSUS_GENE
-            if neighbor in SPECIFIC_FDA_DRUG_TARGETS:
-                score += SPECIFIC_FDA_DRUG_TARGETS[neighbor] * SCORES.SPECIFIC_FDA_DRUG_TARGET
-            if neighbor in OTHER_FDA_DRUG_TARGETS:
-                score += OTHER_FDA_DRUG_TARGETS[neighbor] * SCORES.OTHER_FDA_DRUG_TARGET
+            if neighbor in self.specific_fda_drug_targets:
+                score += self.specific_fda_drug_targets[neighbor] * SCORES.SPECIFIC_FDA_DRUG_TARGET
+            if neighbor in self.other_fda_drug_targets:
+                score += self.other_fda_drug_targets[neighbor] * SCORES.OTHER_FDA_DRUG_TARGET
 
             if score > 0:
                 scores[neighbor] = score
@@ -459,41 +417,63 @@ class TumorBoardAgent:
         return merged
 
     @staticmethod
-    def query_target_genes(disease_name):
-        drugs = TumorBoardAgent.query_fda_drugs(disease_name)
+    @lru_cache(maxsize=None)
+    def query_target_genes(disease_name, for_self=True):
+        drugs = TumorBoardAgent.query_fda_drugs(disease_name, for_self)
         agents = list(map(lambda n: get_agent_from_name(n), drugs))
-        # TODO: run in parallel?
-        genes = list(map(lambda a: list(_dtda.find_drug_targets(a)), agents))
-        genes = TumorBoardAgent.flatten_2d_list(genes)
-        genes = list(set(genes))
-        return genes
 
+        # TODO: should keep running in parallel?
+        pool = Pool()
+        genes = pool.map(TumorBoardAgent.find_drug_targets, agents)
+        # genes = list(map(lambda a: list(_dtda.find_drug_targets(a)), agents))
+        res = {}
+
+        genes = TumorBoardAgent.flatten_2d_list(genes)
+
+        for g in genes:
+            n = res.get(g, 0) + 1
+            res[g] = n
+
+        return res
 
     @staticmethod
-    def query_fda_drugs(disease_name, skip=0, so_far=[]):
+    def find_drug_targets(a):
+        return list(_dtda.find_drug_targets(a))
+
+    @staticmethod
+    def query_fda_drugs(disease_name, for_self=True, skip=0, so_far=[]):
         limit = 500
         threshold = 20
 
         if len(so_far) > threshold:
             return so_far[0:threshold]
 
-        res = TumorBoardAgent.query_fda_drugs_in_range(disease_name, skip, limit)
+        res = TumorBoardAgent.query_fda_drugs_in_range(disease_name, for_self, skip, limit)
 
         if len(res) == 0:
             return so_far
 
         so_far = list(set(so_far + res))
         skip = skip + limit
-        return TumorBoardAgent.query_fda_drugs(disease_name, skip, so_far)
+        return TumorBoardAgent.query_fda_drugs(disease_name, for_self, skip, so_far)
 
 
     @staticmethod
-    def query_fda_drugs_in_range(disease_name, skip, limit):
-        disease_name = disease_name.upper()
+    def query_fda_drugs_in_range(disease_name, for_self, skip, limit):
         FDA_EVENT_URL = 'https://api.fda.gov/drug/event.json'
-        search = 'patient.drug.drugindication:"' + disease_name + '"'
 
-        params = { 'limit': limit, 'search': search, 'skip': skip }
+        search_disease_name = disease_name
+
+        if not for_self:
+            search_disease_name = 'CANCER'
+
+        search = 'patient.drug.drugindication:"' + search_disease_name + '"'
+
+        params = { 'limit': limit, 'skip': skip, 'search': search }
+
+        # if for_self:
+        #     search = 'patient.drug.drugindication:"' + disease_name + '"'
+        #     params['search'] = search
 
         r = requests.get(FDA_EVENT_URL, params)
         # r = requests.get('https://api.fda.gov/drug/event.json?search=patient.drug.drugindication:%22BREAST%20CANCER%22&limit=5')
@@ -505,7 +485,7 @@ class TumorBoardAgent:
 
             def get_drug_name(d):
                 indication = d.get('drugindication', '').upper()
-                if indication != disease_name:
+                if for_self == (indication != disease_name):
                     return None
                 gnames = d.get('openfda', {}).get('generic_name')
 
@@ -579,6 +559,32 @@ class TumorBoardAgent:
 
         sbgn = biopax_text_to_sbgn(text)
         return sbgn
+
+    @staticmethod
+    def get_census_gene_sets(disease_name):
+        SPECIFIC_CENSUS_DISASE_TYPES = set([disease_name, disease_name.replace(' cancer', '')])
+        specific = set()
+        other = set()
+
+        def get_tumor_types_set(s):
+            return set(s.strip('"').split(', '))
+
+        def on_data(tabs):
+            tumor_types = get_tumor_types_set(tabs[9]) | get_tumor_types_set(tabs[10])
+            gene = tabs[0]
+
+            specific_tumor_type = bool( tumor_types & SPECIFIC_CENSUS_DISASE_TYPES )
+            related_set = specific if specific_tumor_type else other
+
+            related_set.add(gene)
+
+        if path.exists(CENSUS_PATH):
+            del_file_stream = DelimitedFileStream()
+            del_file_stream.parse_file( file_path=CENSUS_PATH, on_data=on_data )
+        else:
+            warnings.warn('Census input file is missing criteria will be executed without that!')
+
+        return [specific, other]
 
     @staticmethod
     def read_text_file(f):
