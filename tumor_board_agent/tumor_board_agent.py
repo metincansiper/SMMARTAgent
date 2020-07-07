@@ -11,9 +11,13 @@ import pandas
 from bioagents.cbio_client import *
 from indra.databases.hgnc_client import \
     get_hgnc_from_entrez, get_hgnc_name
+# TODO: Remove dependency to clare
+from clare.capabilities.util import get_agent_from_name
+from bioagents.dtda.dtda import DTDA
 
 file_dir = path.dirname(path.abspath(__file__))
 parent_dir = path.dirname(file_dir)
+_dtda = DTDA()
 
 
 def join_path(p):
@@ -455,12 +459,23 @@ class TumorBoardAgent:
         return merged
 
     @staticmethod
+    def query_target_genes(disease_name):
+        drugs = TumorBoardAgent.query_fda_drugs(disease_name)
+        agents = list(map(lambda n: get_agent_from_name(n), drugs))
+        # TODO: run in parallel?
+        genes = list(map(lambda a: list(_dtda.find_drug_targets(a)), agents))
+        genes = TumorBoardAgent.flatten_2d_list(genes)
+        genes = list(set(genes))
+        return genes
+
+
+    @staticmethod
     def query_fda_drugs(disease_name, skip=0, so_far=[]):
         limit = 500
-        threshold = 50
+        threshold = 20
 
         if len(so_far) > threshold:
-            return so_far
+            return so_far[0:threshold]
 
         res = TumorBoardAgent.query_fda_drugs_in_range(disease_name, skip, limit)
 
