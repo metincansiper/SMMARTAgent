@@ -116,27 +116,36 @@ class TumorBoardAgent:
         report_sum = functools.reduce(lambda a, b: Counter(a) + Counter(b),
                                       report.values())
 
-        # TODO: enable or update and enable based on requirements.
-        # for g in variant_genes:
-        #     report_sum[ g ] = report_sum[ g ] + SCORES.VARIANT;
-        #
-        # for g in cna_genes:
-        #     report_sum[ g ] = report_sum[ g ] + SCORES.CNA;
+        # most_common = report_sum.most_common()
 
-        most_common = report_sum.most_common()
-        sorted_neighbors = []
+        def get_sorted_genes(report_sum):
+            most_common = report_sum.most_common()
+            sorted_genes = []
 
-        for e in most_common:
-            score = e[1]
-            gene = e[0]
-            if score > SCORE_THRESHOLD:
-                sorted_neighbors.append(gene)
+            for e in most_common:
+                score = e[1]
+                gene = e[0]
+                if score > SCORE_THRESHOLD:
+                    sorted_genes.append(gene)
+
+            return sorted_genes
+
+        sorted_neighbors = get_sorted_genes(report_sum)
+
+        for g in variant_genes:
+            report_sum[ g ] = report_sum[ g ] + SCORES.VARIANT
+
+        for g in cna_genes:
+            report_sum[ g ] = report_sum[ g ] + SCORES.CNA
+
+        sorted_genes = get_sorted_genes(report_sum)
 
         self.sorted_neighbors = sorted_neighbors
+        self.sorted_genes = sorted_genes
         self.variant_pairs = variant_pairs
         self.cna_pairs = cna_pairs
 
-        return sorted_neighbors
+        return sorted_genes
 
     def get_evidences_for(self, gene1, gene2):
         # TODO: throw error if self.pc_evidences is not set
@@ -168,6 +177,9 @@ class TumorBoardAgent:
     def get_top_neighbors(self, k):
         # TODO: throw error if self.sorted_neighbors is not set
         return self.sorted_neighbors[:k]
+
+    def get_top_genes(self, k):
+        return self.sorted_genes[:k]
 
     def get_important_neighbors_of_gene(self, gene, k=None):
         if gene not in self.tumor_board_report:
