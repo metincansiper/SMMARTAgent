@@ -36,8 +36,10 @@ CANCER_NETWORK_JAR_PATH = join_path('jar/cancer-network.jar')
 CLINICAL_TRIALS_URL = 'https://clinicaltrials.gov/ct2/results/download_fields'
 
 SCORE_THRESHOLD = 10
-PC_NEIGHBORHOOD_URL = 'https://www.pathwaycommons.org/sifgraph/v1/neighborhood'
+PC_SIFGRAPH_URL = 'https://www.pathwaycommons.org/sifgraph/v1/'
 PC_GRAPH_URL = 'https://www.pathwaycommons.org/pc2/graph'
+PC_SIF_PATHSBETWEEN_URL = PC_SIFGRAPH_URL + 'pathsbetween'
+PC_NEIGHBORHOOD_URL = PC_SIFGRAPH_URL + 'neighborhood'
 PC_LIMIT = 1
 CONTROLS_EXPRESSION_OF = 'controls-expression-of'.upper()
 IN_COMPLEX_WITH = 'in-complex-with'.upper()
@@ -423,6 +425,12 @@ class TumorBoardAgent:
             cna_pairs.append((gene_name, alteration_str))
         return cna_pairs
 
+    def get_sif_pathsbetween(self):
+        k = 30
+        sources = self.get_top_genes(k)
+        r = TumorBoardAgent.query_pc_sif_pathsbetween(sources)
+        return r.text
+
     @staticmethod
     def flatten_2d_list(list2d):
         merged = list(itertools.chain(*list2d))
@@ -530,6 +538,12 @@ class TumorBoardAgent:
         PATTERNS = ['CONTROLS_STATE_CHANGE_OF', 'CONTROLS_EXPRESSION_OF', 'IN_COMPLEX_WITH']
         params = { 'limit': PC_LIMIT, 'direction': DIR, 'pattern': PATTERNS, 'source': variant_gene }
         return params
+
+    @staticmethod
+    def query_pc_sif_pathsbetween(sources):
+        params = { 'source': sources }
+        r = requests.get(PC_SIF_PATHSBETWEEN_URL, params)
+        return r
 
     @staticmethod
     def query_pc_pathsbetween(sources):
