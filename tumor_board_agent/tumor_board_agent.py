@@ -87,8 +87,10 @@ class TumorBoardAgent:
 
         self.sample_info = self.patient.sample.clinical_info
         self.disease_name = self.sample_info.get('CANCER_TYPE', 'cancer').lower()
-        self.specific_fda_drug_targets = TumorBoardAgent.query_target_genes(self.disease_name)
-        self.other_fda_drug_targets = TumorBoardAgent.query_target_genes(self.disease_name, False);
+        self.specific_fda_drug_targets = {}
+        self.other_fda_drug_targets = {}
+        # self.specific_fda_drug_targets = TumorBoardAgent.query_target_genes(self.disease_name)
+        # self.other_fda_drug_targets = TumorBoardAgent.query_target_genes(self.disease_name, False);
         [self.specific_cencus_genes, self.other_cencus_genes] = TumorBoardAgent.get_census_gene_sets(self.disease_name)
 
         report = {}
