@@ -426,7 +426,7 @@ class TumorBoardAgent:
         return cna_pairs
 
     def get_sif_pathsbetween(self):
-        k = 30
+        k = 20
         sources = self.get_top_genes(k)
         r = TumorBoardAgent.query_pc_sif_pathsbetween(sources)
         return r.text
