@@ -200,7 +200,7 @@ class TumorBoardAgent:
     def get_variant_pairs(self):
         return self.variant_pairs
 
-    def why_important(self, gene, k=2):
+    def get_top_nighbors_of(self, gene, k=2):
         variant_scores = {}
         # TODO throw error if self.tumor_board_report is not set
         for variant_gene in self.tumor_board_report:
