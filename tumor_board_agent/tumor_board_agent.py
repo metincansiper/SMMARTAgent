@@ -3,7 +3,8 @@ import functools
 from collections import Counter
 from .parser.delimited_file_stream import DelimitedFileStream
 from .util.paxtools import biopax_text_to_sbgn, DEFAULT_MAX_CONVERSIONS
-from os import path, system
+from .biopsy_patient import BiopsyPatient
+from os import path, system, environ
 import heapq
 import warnings
 import pandas
@@ -26,6 +27,7 @@ CANCER_NETWORK_PATH = join_path('input/cancer_network')
 CN_MUTEC_FILE_PATH = path.join(CANCER_NETWORK_PATH, 'mutec.csv')
 CN_SIF_OUTPUT_PATH = path.join(CANCER_NETWORK_PATH, 'network.sif')
 CANCER_NETWORK_JAR_PATH = join_path('jar/cancer-network.jar')
+DEFAULT_BIOPSY_FOLDER_PATH =   join_path('input/biopsy_patients')
 CLINICAL_TRIALS_URL = 'https://clinicaltrials.gov/ct2/results/download_fields'
 
 SCORE_THRESHOLD = 10
@@ -108,8 +110,17 @@ class TumorBoardAgent:
         self.patient_id = patient_id
         self.variant_pairs = []
         self.cna_pairs = []
+        import pdb; pdb.set_trace()
         if patient_id is not None:
-            self.patient = Patient(patient_id)
+            patient_folder = environ['PATIENT_FOLDER']
+            if patient_folder is None:
+                self.patient = Patient(patient_id)
+            else:
+                if patient_folder is 'DEFAULT_BIOPSY':
+                    patient_folder = DEFAULT_BIOPSY_FOLDER_PATH
+
+                self.patient = BiopsyPatient(patient_id, patient_folder)
+
             self.create_tumor_board_report(self.patient_id)
 
     def create_tumor_board_report(self, patient_id):
