@@ -5,7 +5,8 @@ import itertools
 from collections import Counter
 from .parser.delimited_file_stream import DelimitedFileStream
 from .util.paxtools import biopax_text_to_sbgn, DEFAULT_MAX_CONVERSIONS
-from os import path, system
+from .biopsy_patient import BiopsyPatient
+from os import path, system, environ
 import heapq
 import warnings
 import pandas
@@ -30,6 +31,7 @@ PATIENT_VARIANTS_PATH = join_path('input/patient_variants.txt')
 CENSUS_PATH = join_path('input/census.tsv')
 FDA_DRUG_LIST_PATH = join_path('input/drug_list_comprehensive.txt')
 CANCER_NETWORK_PATH = join_path('input/cancer_network')
+DEFAULT_BIOPSY_FOLDER_PATH =   join_path('input/biopsy_patients')
 CN_MUTEC_FILE_PATH = path.join(CANCER_NETWORK_PATH, 'mutec.csv')
 CN_SIF_OUTPUT_PATH = path.join(CANCER_NETWORK_PATH, 'network.sif')
 CANCER_NETWORK_JAR_PATH = join_path('jar/cancer-network.jar')
@@ -69,7 +71,15 @@ class TumorBoardAgent:
         self.variant_pairs = []
         self.cna_pairs = []
         if patient_id is not None:
-            self.patient = Patient(patient_id)
+            patient_folder = environ.get('PATIENT_FOLDER', None)
+            if patient_folder is None:
+                self.patient = Patient(patient_id)
+            else:
+                if patient_folder == 'DEFAULT_BIOPSY':
+                    patient_folder = DEFAULT_BIOPSY_FOLDER_PATH
+
+                self.patient = BiopsyPatient(patient_id, patient_folder)
+
             self.create_tumor_board_report(self.patient_id)
 
     def create_tumor_board_report(self, patient_id):
@@ -405,8 +415,10 @@ class TumorBoardAgent:
     def read_variant_pairs(self):
         mutations_by_gene = defaultdict(list)
         for mutation in self.patient.mutations:
-            gene_name = get_hgnc_name(
-                get_hgnc_from_entrez(str(mutation['entrezGeneId'])))
+            gene_name = mutation.get('geneName')
+            if gene_name is None:
+                gene_name = get_hgnc_name(
+                    get_hgnc_from_entrez(str(mutation['entrezGeneId'])))
             change = mutation['proteinChange']
             mutations_by_gene[gene_name].append(change)
         return list(mutations_by_gene.items())
@@ -421,8 +433,10 @@ class TumorBoardAgent:
         }
         cna_pairs = []
         for cna in self.patient.cnas:
-            gene_name = get_hgnc_name(
-                get_hgnc_from_entrez(str(cna['entrezGeneId'])))
+            gene_name = cna.get('geneName')
+            if gene_name is None:
+                gene_name = get_hgnc_name(
+                    get_hgnc_from_entrez(str(cna['entrezGeneId'])))
             alteration_str = alteration_map[cna['alteration']]
             cna_pairs.append((gene_name, alteration_str))
         return cna_pairs
