@@ -1,5 +1,4 @@
-from .jnius_prep import *
-from jnius import autoclass, cast
+from indra.java_vm import autoclass, cast
 import heapq
 from .sbgn import get_default_bbox
 
